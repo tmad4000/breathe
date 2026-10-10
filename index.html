@@ -65,8 +65,10 @@
         <div><span class="k">Breaths</span><span class="v" id="sumBreaths">--</span></div>
         <div><span class="k">Range</span><span class="v" id="sumRange">--</span></div>
       </div>
+      <p class="muted" id="sumPace" hidden></p>
       <canvas id="trendChart" class="chart" aria-label="Breathing rate over time"></canvas>
       <div class="row">
+        <button class="btn secondary" id="clipBtn" hidden>Share clip</button>
         <button class="btn secondary" id="exportBtn">Export CSV</button>
         <button class="btn primary" id="doneBtn">Done</button>
       </div>
@@ -75,11 +77,25 @@
 
   <div class="sheet" id="historySheet" hidden>
     <div class="sheet-body">
-      <h2>History</h2>
+      <h2>History &amp; settings</h2>
       <ul id="historyList" class="history"></ul>
+      <h3>Settings</h3>
+      <label class="field">
+        <span>Breathing guide</span>
+        <select id="paceSelect">
+          <option value="0">Off</option>
+          <option value="6">6 breaths/min</option>
+          <option value="8">8 breaths/min</option>
+          <option value="10">10 breaths/min</option>
+          <option value="12">12 breaths/min</option>
+          <option value="15">15 breaths/min</option>
+          <option value="20">20 breaths/min</option>
+        </select>
+      </label>
+      <p class="muted hint">Follow the ring in and out to check accuracy: the measured rate should match the guide.</p>
       <label class="toggle">
-        <input type="checkbox" id="compToggle" checked>
-        <span>Cancel head and hand motion (uses face movement as reference)</span>
+        <input type="checkbox" id="recordToggle">
+        <span>Record the first 2 minutes as a video clip, so it can be shared for tuning (stays on this phone unless you share it)</span>
       </label>
       <div class="row">
         <button class="btn secondary" id="clearBtn">Clear history</button>

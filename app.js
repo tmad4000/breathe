@@ -1,8 +1,11 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
-import { rgbaToGray, blockFlow, RespirationSession } from './signal.js';
+import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.1.0';
-const PROC_MAX_SIDE = 256;       // analysis resolution (longest side, px)
+const VERSION = '0.2.0';
+const PROC_MAX_SIDE = 256;       // face/overlay coordinate frame (longest side, px)
+const CHEST_W = 200;             // chest crop width for motion analysis, px
+const GRID = { x: 6, y: 5 };     // chest motion blocks
+const CLIP_MAX_S = 120;
 const DETECT_EVERY = 4;          // run face detection every Nth frame
 const FACE_LOST_MS = 900;
 const STORE_KEY = 'breathe.sessions.v1';
@@ -12,8 +15,8 @@ const $ = (id) => document.getElementById(id);
 const video = $('video');
 const overlay = $('overlay');
 const octx = overlay.getContext('2d');
-const proc = document.createElement('canvas');
-const pctx = proc.getContext('2d', { willReadFrequently: true });
+const crop = document.createElement('canvas');
+const cctx = crop.getContext('2d', { willReadFrequently: true });
 
 let detector = null;
 let detectorPromise = null;
@@ -26,12 +29,14 @@ let running = false;
 let paused = false;
 let wakeLock = null;
 
-let PW = 0, PH = 0, prevGray = null, curGray = null, havePrev = false;
+let PW = 0, PH = 0, CW = 0, CH = 0, prevGray = null, curGray = null, havePrev = false;
 let face = null, faceSeenAt = -Infinity, chest = null, chestHidden = false;
 let frameIdx = 0, lastDetectT = 0, lastTrackedT = -Infinity, motionUntil = 0;
 let lastUiT = 0, waveScale = 0, ringLevel = 0;
 let lastSummary = null;
 let debugLog = null;
+let guideStart = 0;
+let recorder = null, clipChunks = [], clipBlob = null;
 
 $('version').textContent = VERSION;
 
@@ -60,7 +65,7 @@ async function startCamera() {
   } else {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } },
+      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
     });
     video.srcObject = stream;
     mirrored = facing === 'user';
@@ -70,9 +75,6 @@ async function startCamera() {
   const s = PROC_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight);
   PW = Math.round(video.videoWidth * s);
   PH = Math.round(video.videoHeight * s);
-  proc.width = PW; proc.height = PH;
-  prevGray = new Float32Array(PW * PH);
-  curGray = new Float32Array(PW * PH);
   havePrev = false; face = null; chest = null;
   scheduleFrame();
 }
@@ -97,34 +99,49 @@ function onFrame() {
   scheduleFrame();
 }
 
-function processFrame(t) {
-  pctx.drawImage(video, 0, 0, PW, PH);
-  rgbaToGray(pctx.getImageData(0, 0, PW, PH).data, curGray);
+// Crop the chest box from the full-resolution video so sub-millimetre chest
+// motion is still a measurable fraction of a pixel.
+function grabChest() {
+  const k = video.videoWidth / PW;
+  cctx.drawImage(video, chest.x * k, chest.y * k, chest.w * k, chest.h * k, 0, 0, CW, CH);
+  rgbaToGray(cctx.getImageData(0, 0, CW, CH).data, curGray);
+}
 
+function setChest(rect) {
+  chest = rect;
+  if (!rect) return;
+  CW = CHEST_W;
+  CH = Math.max(40, Math.round(CHEST_W * rect.h / rect.w));
+  crop.width = CW; crop.height = CH;
+  prevGray = new Float32Array(CW * CH);
+  curGray = new Float32Array(CW * CH);
+  havePrev = false;
+}
+
+function processFrame(t) {
   if (detector && frameIdx++ % DETECT_EVERY === 0 && t > lastDetectT) {
     lastDetectT = t;
     detectFace(t);
   }
   const faceOk = t - faceSeenAt < FACE_LOST_MS;
 
-  if (running && !paused && faceOk && chest && havePrev) {
-    const vChest = blockFlow(prevGray, curGray, PW, PH, chest);
-    if (vChest !== null) {
-      let flow = vChest;
-      if ($('compToggle').checked) {
-        const vFace = blockFlow(prevGray, curGray, PW, PH, shrink(face, 0.15), 3, 3);
-        if (vFace !== null) flow -= vFace;
-      }
-      if (Math.abs(flow) > 0.025 * chest.h) { motionUntil = t + 1500; flow = 0; }
+  if (running && !paused && faceOk && chest) {
+    grabChest();
+    if (havePrev) {
+      let flows = blockFlows(prevGray, curGray, CW, CH, { x: 0, y: 0, w: CW, h: CH }, GRID.x, GRID.y);
+      // Large whole-box motion is you moving, not breathing: skip it.
+      const moving = flows.filter((f, i) => i % 2 && Number.isFinite(f)).map(Math.abs).sort((a, b) => a - b);
+      if (moving.length && moving[moving.length >> 1] > 0.02 * CH) { motionUntil = t + 1500; flows = flows.fill(NaN); }
       const dt = t - lastTrackedT < 300 ? (t - lastTrackedT) / 1000 : 1 / 30;
-      session.push(dt, flow, chest.h);
-      debugLog?.push({ t, vChest, flow, dt });
+      session.push(dt, flows, CH);
+      debugLog?.push({ t, dt, valid: flows.filter(Number.isFinite).length });
       lastTrackedT = t;
     }
+    [prevGray, curGray] = [curGray, prevGray];
+    havePrev = true;
+  } else {
+    havePrev = false;
   }
-
-  [prevGray, curGray] = [curGray, prevGray];
-  havePrev = true;
   drawOverlay(faceOk);
   if (t - lastUiT > 400) { lastUiT = t; updateUi(t, faceOk); }
 }
@@ -142,8 +159,8 @@ function detectFace(t) {
 
   const target = chestFromFace(face);
   chestHidden = !target;
-  if (!target) { chest = null; return; }
-  if (!chest || rectMoved(chest, target, face.w * 0.2)) chest = target;
+  if (!target) { setChest(null); return; }
+  if (!chest || rectMoved(chest, target, face.w * 0.2)) setChest(target);
 }
 
 // Chest box below the chin, about 2.6 face-widths wide (as in Google Fit's overlay).
@@ -157,7 +174,6 @@ function chestFromFace(f) {
   return { x, y: top, w: right - x, h };
 }
 
-const shrink = (r, k) => ({ x: r.x + r.w * k, y: r.y + r.h * k, w: r.w * (1 - 2 * k), h: r.h * (1 - 2 * k) });
 const lerpRect = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, w: a.w + (b.w - a.w) * k, h: a.h + (b.h - a.h) * k });
 const rectMoved = (a, b, tol) =>
   Math.abs(a.x + a.w / 2 - (b.x + b.w / 2)) > tol || Math.abs(a.y - b.y) > tol || Math.abs(a.w - b.w) > tol;
@@ -197,12 +213,12 @@ function drawOverlay(faceOk) {
   octx.strokeRect(cr.x, cr.y, cr.w, cr.h);
   octx.setLineDash([]);
 
-  const wave = session?.recentWaveform(12);
+  const wave = session?.recentWaveform(10);
   if (!running || !wave || wave.length < 20) return;
   let peak = 0;
   for (const v of wave) peak = Math.max(peak, Math.abs(v));
   waveScale = Math.max(peak, waveScale * 0.995, 1e-3);
-  const n = 12 * 10;
+  const n = 10 * 10;
   const pad = cr.w * 0.06;
   octx.beginPath();
   wave.forEach((v, i) => {
@@ -236,19 +252,31 @@ function updateUi(t, faceOk) {
   $('breaths').textContent = session.breaths.length;
   const avg = session.averageRate();
   $('avg').textContent = avg ? avg.toFixed(1) : '--';
-  $('ringFill').style.strokeDashoffset = RING_LEN * (1 - (paused ? 0 : ringLevel));
 
+  const guide = guidePhase();
   if (paused) setStatus('Paused. Tap Resume to keep going.');
   else if (!faceOk) setStatus('Looking for you… Keep your face and shoulders in the frame.');
   else if (chestHidden || !chest) setStatus('Move the phone back a little so your chest is in view.');
   else if (t < motionUntil) setStatus('Hold still…');
+  else if (guide) setStatus(`${guide.inhale ? 'Breathe in…' : 'Breathe out…'}  Guide: ${session.paceBpm}/min${rate ? '' : ' · measuring'}`);
+  else if (!rate && session.activeS > 25) setStatus('Signal is weak. Hold still, keep your chest well lit and in the lower box.');
   else if (!rate) setStatus('Tracking small changes in your chest. Breathe comfortably and hold still…');
   else setStatus('Tracking your breathing. Go as long as you like, then tap Stop.');
 }
 
-// Smooth ring motion between UI ticks.
+// Paced-breathing guide: inhale for 40% of each cycle, exhale for 60%.
+function guidePhase() {
+  if (!running || !session?.paceBpm) return null;
+  const cycle = (((performance.now() - guideStart) / 1000) * session.paceBpm / 60) % 1;
+  return cycle < 0.4 ? { inhale: true, level: cycle / 0.4 } : { inhale: false, level: 1 - (cycle - 0.4) / 0.6 };
+}
+
+// Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
-  if (running && !paused) $('ringFill').style.strokeDashoffset = RING_LEN * (1 - ringLevel);
+  if (running && !paused) {
+    const level = guidePhase()?.level ?? ringLevel;
+    $('ringFill').style.strokeDashoffset = RING_LEN * (1 - level);
+  }
   requestAnimationFrame(ringLoop);
 })();
 
@@ -271,8 +299,12 @@ async function start() {
     setStatus(cameraErrorText(err));
     return;
   }
-  session = new RespirationSession();
+  const pace = Number($('paceSelect').value) || null;
+  session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
+  guideStart = performance.now();
+  clipBlob = null;
+  if ($('recordToggle').checked) startClip();
   $('startBtn').disabled = false;
   setControls();
   requestWakeLock();
@@ -283,11 +315,43 @@ function stop() {
   running = false; paused = false;
   setControls();
   releaseWakeLock();
+  stopClip();
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
+  lastLive = summary;
   showSummary(summary);
   $('ringFill').style.strokeDashoffset = RING_LEN;
   setStatus('Prop your phone up or hold it steady with your face and upper chest in view, then tap Start.');
+}
+
+// Optional short recording of the camera so a session can be replayed through
+// ?src= for tuning. Stays on the device unless the user shares it.
+function startClip() {
+  if (TEST_SRC || !window.MediaRecorder || !stream) return;
+  const type = ['video/mp4', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t));
+  try { recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 4_000_000 }); } catch { recorder = null; return; }
+  clipChunks = [];
+  recorder.ondataavailable = (e) => e.data.size && clipChunks.push(e.data);
+  recorder.onstop = () => {
+    clipBlob = new Blob(clipChunks, { type: recorder.mimeType });
+    $('clipBtn').hidden = !clipBlob.size;
+  };
+  recorder.start(1000);
+  setTimeout(stopClip, CLIP_MAX_S * 1000);
+}
+function stopClip() {
+  if (recorder?.state === 'recording') recorder.stop();
+}
+
+async function shareFile(file, title) {
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title }); return; } catch (err) { if (err?.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
 function cameraErrorText(err) {
@@ -323,10 +387,12 @@ function loadSessions() {
 }
 function saveSession(summary) {
   const all = loadSessions();
-  all.unshift(summary);
+  const { signal, ...kept } = summary; // the raw signal is only kept for export
+  all.unshift(kept);
   localStorage.setItem(STORE_KEY, JSON.stringify(all.slice(0, 200)));
 }
 
+let lastLive = null;
 function showSummary(s) {
   lastSummary = s;
   $('sumDate').textContent = new Date(s.startedAt).toLocaleString();
@@ -334,6 +400,9 @@ function showSummary(s) {
   $('sumDur').textContent = fmtDuration(s.durationS);
   $('sumBreaths').textContent = s.breaths;
   $('sumRange').textContent = s.minBpm ? `${Math.round(s.minBpm)}–${Math.round(s.maxBpm)}` : '--';
+  $('sumPace').hidden = !s.paceBpm;
+  $('sumPace').textContent = s.paceBpm ? `Breathing guide was ${s.paceBpm}/min — compare with the average above.` : '';
+  $('clipBtn').hidden = !(clipBlob?.size && s === lastLive);
   $('summarySheet').hidden = false;
   requestAnimationFrame(() => drawTrend($('trendChart'), s.trend));
 }
@@ -373,24 +442,26 @@ function drawTrend(canvas, trend) {
 }
 
 function toCsv(s) {
-  const rows = ['type,elapsed_s,wall_time,breaths_per_min'];
+  const rows = ['type,elapsed_s,wall_time,value'];
+  if (s.paceBpm) rows.push(`guide_bpm,0,,${s.paceBpm}`);
   for (const p of s.trend) rows.push(`rate,${p.t.toFixed(1)},${new Date(p.wallMs).toISOString()},${p.bpm.toFixed(2)}`);
   for (const b of s.breathTimes) rows.push(`breath,${b.toFixed(2)},,`);
+  (s.signal ?? []).forEach((v, i) => rows.push(`signal,${(i / 10).toFixed(1)},,${v}`));
   return rows.join('\n') + '\n';
 }
 
 async function exportCsv() {
   if (!lastSummary) return;
   const name = `breathing-${lastSummary.startedAt.replace(/[:.]/g, '-')}.csv`;
-  const file = new File([toCsv(lastSummary)], name, { type: 'text/csv' });
-  if (navigator.canShare?.({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'Breathing session' }); return; } catch (err) { if (err?.name === 'AbortError') return; }
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(file);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  await shareFile(new File([toCsv(lastSummary)], name, { type: 'text/csv' }), 'Breathing session');
+}
+
+async function exportClip() {
+  if (!clipBlob) return;
+  const ext = clipBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  const pace = lastLive?.paceBpm ? `-guide${lastLive.paceBpm}` : '';
+  const name = `breathing-clip${pace}-${lastLive.startedAt.replace(/[:.]/g, '-')}.${ext}`;
+  await shareFile(new File([clipBlob], name, { type: clipBlob.type }), 'Breathing clip');
 }
 
 function renderHistory() {
@@ -428,8 +499,11 @@ $('closeHistoryBtn').onclick = () => { $('historySheet').hidden = true; };
 $('clearBtn').onclick = () => {
   if (confirm('Delete all saved sessions on this device?')) { localStorage.removeItem(STORE_KEY); renderHistory(); }
 };
-$('compToggle').checked = localStorage.getItem('breathe.comp') !== 'off';
-$('compToggle').onchange = (e) => localStorage.setItem('breathe.comp', e.target.checked ? 'on' : 'off');
+$('clipBtn').onclick = exportClip;
+$('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
+$('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
+$('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
+$('recordToggle').onchange = (e) => localStorage.setItem('breathe.record', e.target.checked ? 'on' : 'off');
 $('flipBtn').onclick = async () => {
   facing = facing === 'user' ? 'environment' : 'user';
   if (stream) { try { await startCamera(); } catch (err) { setStatus(cameraErrorText(err)); } }

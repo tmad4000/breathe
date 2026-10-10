@@ -15,16 +15,27 @@ chest (optical flow). Everything runs on the phone; no video leaves the device.
    vendored in `vendor/`, BlazeFace short-range model in `models/`) finds your
    face every 4th frame. A chest box is placed below the chin, about 2.6 face
    widths wide. The box stays put unless you move.
-2. **Measure motion:** each frame is downscaled to 256 px. Vertical motion in
-   the chest box comes from block Lucas–Kanade optical flow (4×4 blocks, median,
-   brightness-offset term so auto-exposure is ignored). Face motion is
-   subtracted to cancel hand shake (toggle in History).
-3. **Signal:** motion is integrated into chest displacement, resampled to
+2. **Measure motion:** the chest box is cropped from the 720p camera feed at
+   200 px wide, so sub-millimetre motion is still measurable. Lucas–Kanade
+   optical flow gives 2D motion for each block of a 6×5 grid (60 channels),
+   with a brightness-offset term so auto-exposure is ignored.
+3. **Combine:** each channel is integrated into displacement, resampled to
    10 Hz on an "active" clock that pauses when you're out of frame, and
-   band-passed to 0.08–0.9 Hz (≈5–54 breaths/min).
-4. **Rate:** breaths are counted at end-of-inhale peaks (adaptive hysteresis).
-   The current rate covers the last 30 s; while warming up it uses the spectral
-   peak. Every 10 s the rate is logged to a trend.
+   band-passed to 0.08–0.9 Hz (≈5–54 breaths/min). The respiration signal is
+   the first principal component of the last 20 s, which captures the chest
+   lifting, expanding toward the camera, or any mix. It is oriented so that the
+   upper chest rising (inhale) reads as up. The on-screen line uses lighter,
+   low-delay filtering so it moves with the breath you're taking now.
+4. **Rate and quality:** breaths are counted at end-of-inhale peaks. The
+   current rate (last 30 s) is the counted rate when it agrees with the
+   spectral peak, otherwise the spectral peak. "--" shows when the signal is
+   weak: the shared chest motion explains <20% of the variance or the spectrum
+   has no clear peak. Every 10 s the rate is logged to a trend.
+
+**Checking accuracy:** History & settings → Breathing guide. Follow the ring
+in and out at a known pace (e.g. 10/min); the measured rate should match.
+Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
+then replay it with `?src=`.
 
 Sessions save to `localStorage` (History). The summary shows the trend chart
 and exports CSV through the iOS share sheet. Screen Wake Lock keeps the phone
@@ -53,7 +64,8 @@ for end-to-end tests and for analyzing recorded clips. Chrome's fake camera
 can't be used for rate tests: in headless mode it delivers about 5 fps and its
 content clock runs slow.
 
-Verified 2026-10-10: 15 → 14.94, 24 → 23.90, 9 bpm with ±1.5 px whole-frame
-handheld sway → 8.96.
+Verified 2026-10-10 (v0.2.0): 15 → 15.00, 24 → 24.10, 9 bpm with ±1.5 px
+whole-frame handheld sway → 9.16, 12 bpm chest expansion → 12.05. Synthetic
+clips only; real-phone accuracy still needs guided sessions.
 
 Not a medical device.
