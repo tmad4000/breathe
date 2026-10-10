@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "breathe_tracker",
+  "project_id": "9ea340f3-7027-4915-af35-1adcc3458bed"
+}
