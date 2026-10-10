@@ -88,6 +88,29 @@ test('handles chest expansion toward the camera (zero net vertical motion)', () 
   assert.ok(r && Math.abs(r.bpm - 12) < 0.8, `got ${r?.bpm}`);
 });
 
+test('prefers the periodic breath over larger non-periodic sway', () => {
+  let s = 7;
+  const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647 - 0.5);
+  const session = new RespirationSession(60, { grid: { x: 6, y: 5 } });
+  let phase = 0, prev = 0, sway = 0, swayV = 0, prevSway = 0;
+  for (let i = 1; i <= 120 * 30; i++) {
+    phase += 2 * Math.PI * (14 / 60) / 30;
+    const pos = -0.5 * Math.sin(phase);
+    swayV = 0.995 * swayV + 0.3 * rand();           // wandering in-band sway, horizontal
+    sway = 0.999 * sway + swayV / 30;
+    const d = pos - prev, ds = sway - prevSway;
+    prev = pos; prevSway = sway;
+    const flows = new Float32Array(60);
+    for (let b = 0; b < 30; b++) {
+      flows[2 * b] = ds + 0.02 * rand();
+      flows[2 * b + 1] = d + 0.02 * rand();
+    }
+    session.push(1 / 30, flows, 120);
+  }
+  const r = session.currentRate();
+  assert.ok(r && Math.abs(r.bpm - 14) < 1, `got ${JSON.stringify(r)}`);
+});
+
 test('follows a rate change from 12 to 20 bpm', () => {
   const s = simulate((t) => (t < 120 ? 12 : 20), 240, { pattern: vertical });
   const early = s.trend.find((p) => p.t >= 100);

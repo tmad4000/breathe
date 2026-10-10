@@ -1,7 +1,8 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
+const RECOVER_MS = 5000;          // steady tracking needed before a rate is shown again
 const PROC_MAX_SIDE = 256;       // face/overlay coordinate frame (longest side, px)
 const CHEST_W = 200;             // chest crop width for motion analysis, px
 const GRID = { x: 6, y: 5 };     // chest motion blocks
@@ -36,6 +37,8 @@ let lastUiT = 0, waveScale = 0, ringLevel = 0;
 let lastSummary = null;
 let debugLog = null;
 let guideStart = 0;
+let steadySince = null;
+let audioCtx = null, lastGuideInhale = null;
 let recorder = null, clipChunks = [], clipBlob = null;
 
 $('version').textContent = VERSION;
@@ -246,7 +249,12 @@ function setStatus(text) {
 
 function updateUi(t, faceOk) {
   if (!running) return;
-  const rate = session.currentRate();
+  // Never show a stale number: blank the rate as soon as tracking is lost or you
+  // move, and wait for a few seconds of steady tracking before showing it again.
+  const steady = !paused && faceOk && chest && t >= motionUntil;
+  if (!steady) steadySince = null;
+  else steadySince ??= t;
+  const rate = steady && t - steadySince >= RECOVER_MS ? session.currentRate() : null;
   $('bpm').textContent = rate ? Math.round(rate.bpm) : '--';
   $('elapsed').textContent = fmtDuration(session.activeS);
   $('breaths').textContent = session.breaths.length;
@@ -259,7 +267,7 @@ function updateUi(t, faceOk) {
   else if (chestHidden || !chest) setStatus('Move the phone back a little so your chest is in view.');
   else if (t < motionUntil) setStatus('Hold still…');
   else if (guide) setStatus(`${guide.inhale ? 'Breathe in…' : 'Breathe out…'}  Guide: ${session.paceBpm}/min${rate ? '' : ' · measuring'}`);
-  else if (!rate && session.activeS > 25) setStatus('Signal is weak. Hold still, keep your chest well lit and in the lower box.');
+  else if (!rate && session.activeS > 25 && t - steadySince >= RECOVER_MS) setStatus('Signal is weak. Hold still, keep your chest well lit and in the lower box.');
   else if (!rate) setStatus('Tracking small changes in your chest. Breathe comfortably and hold still…');
   else setStatus('Tracking your breathing. Go as long as you like, then tap Stop.');
 }
@@ -271,10 +279,28 @@ function guidePhase() {
   return cycle < 0.4 ? { inhale: true, level: cycle / 0.4 } : { inhale: false, level: 1 - (cycle - 0.4) / 0.6 };
 }
 
+// Soft tone at the start of each guided inhale (higher) and exhale (lower), so
+// the guide can be followed without watching the screen.
+function cue(inhale) {
+  if (!audioCtx || !$('soundToggle').checked) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(inhale ? 392 : 294, now);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.18, now + 0.08);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 1);
+}
+
 // Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
   if (running && !paused) {
-    const level = guidePhase()?.level ?? ringLevel;
+    const guide = guidePhase();
+    if (guide && guide.inhale !== lastGuideInhale) { cue(guide.inhale); lastGuideInhale = guide.inhale; }
+    const level = guide?.level ?? ringLevel;
     $('ringFill').style.strokeDashoffset = RING_LEN * (1 - level);
   }
   requestAnimationFrame(ringLoop);
@@ -303,6 +329,10 @@ async function start() {
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = performance.now();
+  steadySince = null; lastGuideInhale = null;
+  if (pace && $('soundToggle').checked) {
+    try { audioCtx ??= new AudioContext(); audioCtx.resume(); } catch { audioCtx = null; }
+  }
   clipBlob = null;
   if ($('recordToggle').checked) startClip();
   $('startBtn').disabled = false;
@@ -502,6 +532,8 @@ $('clearBtn').onclick = () => {
 $('clipBtn').onclick = exportClip;
 $('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
 $('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
+$('soundToggle').checked = localStorage.getItem('breathe.sound') !== 'off';
+$('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.target.checked ? 'on' : 'off');
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
 $('recordToggle').onchange = (e) => localStorage.setItem('breathe.record', e.target.checked ? 'on' : 'off');
 $('flipBtn').onclick = async () => {

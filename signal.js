@@ -11,7 +11,8 @@ export const SAMPLE_HZ = 10;
 const BAND_LO_HZ = 0.08;
 const BAND_HI_HZ = 0.9;
 const RATE_WINDOW_S = 30;
-const PCA_WINDOW_S = 20;
+const PCA_WINDOW_S = 30;
+const PCA_CANDIDATES = 3;
 const TREND_EVERY_S = 10;
 const MIN_BREATH_GAP_S = 1.1;
 const MIN_QUALITY = 0.25;     // spectral peak concentration
@@ -99,21 +100,35 @@ const bandpass = () => {
 
 // Dominant respiratory frequency of the window. quality = share of in-band
 // power within ±0.04 Hz of the peak (1 = pure tone, ~0.1 = noise).
+const hannCache = new Map();
+function hann(n) {
+  let w = hannCache.get(n);
+  if (!w) {
+    w = Float64Array.from({ length: n }, (_, k) => 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (n - 1)));
+    hannCache.set(n, w);
+  }
+  return w;
+}
+
 export function spectralRate(samples, fs = SAMPLE_HZ) {
   const n = samples.length;
   if (n < fs * 12) return null;
   let mean = 0;
   for (const v of samples) mean += v;
   mean /= n;
+  const win = hann(n);
+  const v = new Float64Array(n);
+  for (let k = 0; k < n; k++) v[k] = (samples[k] - mean) * win[k];
   const freqs = [], powers = [];
   let best = 0, bestF = 0, total = 0;
   for (let f = BAND_LO_HZ + 0.02; f <= BAND_HI_HZ; f += 0.005) {
-    let re = 0, im = 0;
+    // DFT bin by phasor rotation (no per-sample trig).
+    const dc = Math.cos(2 * Math.PI * f / fs), ds = Math.sin(2 * Math.PI * f / fs);
+    let c = 1, sn = 0, re = 0, im = 0;
     for (let k = 0; k < n; k++) {
-      const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (n - 1));
-      const v = (samples[k] - mean) * w;
-      const ph = 2 * Math.PI * f * k / fs;
-      re += v * Math.cos(ph); im -= v * Math.sin(ph);
+      re += v[k] * c; im -= v[k] * sn;
+      const nc = c * dc - sn * ds;
+      sn = sn * dc + c * ds; c = nc;
     }
     const p = re * re + im * im;
     freqs.push(f); powers.push(p);
@@ -126,11 +141,12 @@ export function spectralRate(samples, fs = SAMPLE_HZ) {
   return { bpm: bestF * 60, quality: near / total };
 }
 
-// First principal component of rows (each a channel vector) by power
-// iteration, warm-started from init so the component (and its sign) is stable.
-// share = fraction of total variance it explains: high when the whole chest
-// moves together (breathing), near 1/dim for independent noise.
-export function principalComponent(rows, dim, init) {
+// Leading principal components of rows (each a channel vector), by power
+// iteration with deflation, warm-started from inits so components and their
+// signs stay stable between windows. share = fraction of total variance a
+// component explains: high when the whole chest moves together, near 1/dim
+// for independent noise.
+export function principalComponents(rows, dim, k = 1, inits = []) {
   const cov = new Float64Array(dim * dim);
   for (const r of rows) {
     for (let i = 0; i < dim; i++) {
@@ -140,27 +156,39 @@ export function principalComponent(rows, dim, init) {
     }
   }
   for (let i = 0; i < dim; i++) for (let j = 0; j < i; j++) cov[i * dim + j] = cov[j * dim + i];
-  let w = init ? Float64Array.from(init) : new Float64Array(dim).fill(1 / Math.sqrt(dim));
-  for (let it = 0; it < 40; it++) {
-    const nw = new Float64Array(dim);
+  let trace = 0;
+  for (let i = 0; i < dim; i++) trace += cov[i * dim + i];
+  if (!(trace > 0)) return [];
+
+  const mul = (w) => {
+    const out = new Float64Array(dim);
     for (let i = 0; i < dim; i++) {
       let s = 0;
       for (let j = 0; j < dim; j++) s += cov[i * dim + j] * w[j];
-      nw[i] = s;
+      out[i] = s;
     }
-    const norm = Math.hypot(...nw);
-    if (!norm) return null;
-    for (let i = 0; i < dim; i++) nw[i] /= norm;
-    w = nw;
+    return out;
+  };
+  const comps = [];
+  for (let c = 0; c < Math.min(k, dim); c++) {
+    let w = inits[c] ? Float64Array.from(inits[c]) : Float64Array.from({ length: dim }, (_, i) => Math.sin(i * 1.7 + c + 1));
+    for (let it = 0; it < 40; it++) {
+      const nw = mul(w);
+      const norm = Math.hypot(...nw);
+      if (!norm) return comps;
+      w = nw.map((v) => v / norm);
+    }
+    const cw = mul(w);
+    let lambda = 0;
+    for (let i = 0; i < dim; i++) lambda += w[i] * cw[i];
+    comps.push({ w, share: lambda / trace });
+    for (let i = 0; i < dim; i++) for (let j = 0; j < dim; j++) cov[i * dim + j] -= lambda * w[i] * w[j];
   }
-  let trace = 0, lambda = 0;
-  for (let i = 0; i < dim; i++) {
-    trace += cov[i * dim + i];
-    let s = 0;
-    for (let j = 0; j < dim; j++) s += cov[i * dim + j] * w[j];
-    lambda += w[i] * s;
-  }
-  return { w, share: trace > 0 ? lambda / trace : 0 };
+  return comps;
+}
+
+export function principalComponent(rows, dim, init) {
+  return principalComponents(rows, dim, 1, init ? [init] : [])[0] ?? null;
 }
 
 // Light filtering for the on-screen line: drift removal plus smoothing with
@@ -181,6 +209,7 @@ export class RespirationSession {
     this.paceBpm = paceBpm;
     this.grid = grid;
     this.share = 0;
+    this.candidates = [];
     this.activeS = 0;
     this.cum = new Float64Array(channels);       // integrated displacement per channel
     this.lastCum = new Float64Array(channels);
@@ -242,11 +271,27 @@ export class RespirationSession {
     }
   }
 
+  // Pick, among the leading components, the one that looks most like breathing
+  // (clearest periodicity), not simply the largest: hand shake or sway can carry
+  // more variance than the breath. A small bonus for continuity avoids flipping.
   #updateWeights(t) {
     const rows = this.history.slice(t < 8 ? 0 : SAMPLE_HZ * 2); // drop the oldest edge-effect samples
-    const pc = principalComponent(rows, this.dim, this.weights);
-    if (!pc) return;
-    const { w } = pc;
+    const comps = principalComponents(rows, this.dim, PCA_CANDIDATES, this.candidates);
+    if (!comps.length) return;
+    this.candidates = comps.map((c) => c.w);
+    // Only components carrying a real share of the motion compete; a tiny but
+    // perfectly regular wobble must not displace the breath.
+    const eligible = comps.filter((c) => c.share >= MIN_SHARE);
+    let pc = comps[0], bestScore = -Infinity;
+    for (const c of eligible) {
+      const series = rows.map((r) => { let y = 0; for (let i = 0; i < this.dim; i++) y += c.w[i] * r[i]; return y; });
+      const periodic = spectralRate(series)?.quality ?? 0;
+      let cont = 0;
+      if (this.weights) { for (let i = 0; i < this.dim; i++) cont += c.w[i] * this.weights[i]; }
+      const score = periodic + 0.08 * Math.abs(cont) + 0.01 * c.share;
+      if (score > bestScore) { bestScore = score; pc = c; }
+    }
+    const w = Float64Array.from(pc.w);
     this.share = pc.share;
     if (!this.weights) { this.weights = this.#orient(w); return; }
     let dot = 0;

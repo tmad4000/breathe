@@ -22,18 +22,23 @@ chest (optical flow). Everything runs on the phone; no video leaves the device.
 3. **Combine:** each channel is integrated into displacement, resampled to
    10 Hz on an "active" clock that pauses when you're out of frame, and
    band-passed to 0.08–0.9 Hz (≈5–54 breaths/min). The respiration signal is
-   the first principal component of the last 20 s, which captures the chest
-   lifting, expanding toward the camera, or any mix. It is oriented so that the
+   whichever of the top 3 principal components of the last 30 s (among those
+   carrying ≥20% of the motion) is most periodic. That captures the chest
+   lifting, expanding toward the camera, or any mix, and avoids locking onto
+   hand sway that carries more motion than the breath. It is oriented so that the
    upper chest rising (inhale) reads as up. The on-screen line uses lighter,
    low-delay filtering so it moves with the breath you're taking now.
 4. **Rate and quality:** breaths are counted at end-of-inhale peaks. The
    current rate (last 30 s) is the counted rate when it agrees with the
    spectral peak, otherwise the spectral peak. "--" shows when the signal is
    weak: the shared chest motion explains <20% of the variance or the spectrum
-   has no clear peak. Every 10 s the rate is logged to a trend.
+   has no clear peak. It also blanks the moment tracking is lost or you move,
+   and returns only after 5 s of steady tracking. Every 10 s the rate is logged
+   to a trend.
 
 **Checking accuracy:** History & settings → Breathing guide. Follow the ring
-in and out at a known pace (e.g. 10/min); the measured rate should match.
+in and out at a known pace (e.g. 10/min); soft tones mark each breath in and
+out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
 then replay it with `?src=`.
 
@@ -64,8 +69,10 @@ for end-to-end tests and for analyzing recorded clips. Chrome's fake camera
 can't be used for rate tests: in headless mode it delivers about 5 fps and its
 content clock runs slow.
 
-Verified 2026-10-10 (v0.2.0): 15 → 15.00, 24 → 24.10, 9 bpm with ±1.5 px
-whole-frame handheld sway → 9.16, 12 bpm chest expansion → 12.05. Synthetic
-clips only; real-phone accuracy still needs guided sessions.
+Verified 2026-10-10 (v0.3.0): 15 → 15.00, 24 → 24.10, 9 bpm with ±1.5 px
+whole-frame sinusoidal sway → 9.13, 12 bpm chest expansion → 12.00. Synthetic
+clips only; real-phone accuracy still needs guided sessions. Background research
+(Google's published method, open-source code, handheld evidence):
+`docs/research-camera-respiration.md`.
 
 Not a medical device.
