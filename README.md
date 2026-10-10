@@ -3,8 +3,8 @@
 A web app that works like Google Fit's camera respiratory-rate check, but
 **keeps running for as long as you want** instead of stopping after 30–60 s.
 
-Live (tailnet only, HTTPS): https://m4-mini.tailb2a35c.ts.net:8968/ —
-open in Safari on the iPhone, then Share → Add to Home Screen.
+**Use it:** https://tmad4000.github.io/breathe/ — open in Safari on an iPhone
+(or any phone browser), allow the camera, then Share → Add to Home Screen.
 
 ## How it works
 
@@ -37,8 +37,8 @@ awake. If iOS kills the camera when you switch apps, it restarts when you come b
 tailscale serve --bg --https=8968 http://127.0.0.1:8968   # HTTPS for the camera
 ```
 
-Persistent on the M4 via launchd `com.jacob.breathe-tracker`
-(`~/Library/LaunchAgents/com.jacob.breathe-tracker.plist`).
+Any static host over HTTPS works (the camera needs a secure origin). Production
+is GitHub Pages from `main`.
 
 ## Test
 
