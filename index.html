@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Breathe">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>Breathe — respiration tracker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn" id="historyBtn" aria-label="History and settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12z"/></svg>
+    </button>
+    <span class="title">Respiration</span>
+    <button class="icon-btn" id="flipBtn" aria-label="Switch camera">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-5 11.5V14H9v2.5L5.5 13 9 9.5V12h6V9.5l3.5 3.5-3.5 3.5z"/></svg>
+    </button>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <p id="status">Prop your phone up or hold it steady with your face and upper chest in view, then tap Start.</p>
+    <div class="ring" role="img" aria-label="Breathing rate">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="ring-track" cx="50" cy="50" r="44"/>
+        <circle class="ring-fill" id="ringFill" cx="50" cy="50" r="44"/>
+      </svg>
+      <div class="ring-label">
+        <span id="bpm">--</span>
+        <small>breaths/min</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div><span class="k">Time</span><span class="v" id="elapsed">0:00</span></div>
+    <div><span class="k">Breaths</span><span class="v" id="breaths">0</span></div>
+    <div><span class="k">Session avg</span><span class="v" id="avg">--</span></div>
+  </section>
+
+  <main class="stage" id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="overlay"></canvas>
+    <div class="controls">
+      <button class="btn primary" id="startBtn">Start</button>
+      <button class="btn secondary" id="pauseBtn" hidden>Pause</button>
+      <button class="btn danger" id="stopBtn" hidden>Stop</button>
+    </div>
+  </main>
+
+  <div class="sheet" id="summarySheet" hidden>
+    <div class="sheet-body">
+      <h2>Session summary</h2>
+      <p class="muted" id="sumDate"></p>
+      <div class="sum-grid">
+        <div><span class="k">Average</span><span class="v big" id="sumAvg">--</span><span class="u">breaths/min</span></div>
+        <div><span class="k">Duration</span><span class="v" id="sumDur">--</span></div>
+        <div><span class="k">Breaths</span><span class="v" id="sumBreaths">--</span></div>
+        <div><span class="k">Range</span><span class="v" id="sumRange">--</span></div>
+      </div>
+      <canvas id="trendChart" class="chart" aria-label="Breathing rate over time"></canvas>
+      <div class="row">
+        <button class="btn secondary" id="exportBtn">Export CSV</button>
+        <button class="btn primary" id="doneBtn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet" id="historySheet" hidden>
+    <div class="sheet-body">
+      <h2>History</h2>
+      <ul id="historyList" class="history"></ul>
+      <label class="toggle">
+        <input type="checkbox" id="compToggle" checked>
+        <span>Cancel head and hand motion (uses face movement as reference)</span>
+      </label>
+      <div class="row">
+        <button class="btn secondary" id="clearBtn">Clear history</button>
+        <button class="btn primary" id="closeHistoryBtn">Close</button>
+      </div>
+      <p class="muted version">Breathe <span id="version"></span> · processing stays on this device</p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

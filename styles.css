@@ -1,0 +1,82 @@
+:root {
+  --blue: #1a73e8;
+  --red: #d93025;
+  --text: #202124;
+  --muted: #5f6368;
+  --border: #dadce0;
+  --track: #eef0f2;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #fff; }
+body {
+  display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+}
+button { font: inherit; cursor: pointer; }
+
+.topbar { display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 8px; flex: none; }
+.title { font-size: 17px; font-weight: 600; }
+.icon-btn { width: 44px; height: 44px; border: 0; background: none; border-radius: 22px; display: grid; place-items: center; }
+.icon-btn:active { background: var(--track); }
+.icon-btn svg { width: 24px; height: 24px; fill: var(--muted); }
+
+.card {
+  flex: none; margin: 4px 16px 0; padding: 16px 16px 16px 20px;
+  border: 1px solid var(--border); border-radius: 12px;
+  display: flex; align-items: center; gap: 16px; min-height: 128px;
+}
+.card p { flex: 1; margin: 0; font-size: 16px; line-height: 1.4; }
+.ring { position: relative; width: 104px; height: 104px; flex: none; }
+.ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 6; }
+.ring-track { stroke: var(--track); }
+.ring-fill { stroke: var(--blue); stroke-linecap: round; stroke-dasharray: 276.46; stroke-dashoffset: 276.46; transition: stroke-dashoffset 0.15s linear; }
+.ring-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-label span { font-size: 30px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.ring-label small { font-size: 11px; color: var(--muted); }
+
+.stats { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); margin: 12px 16px; }
+.stats div { display: flex; flex-direction: column; align-items: center; }
+.k { font-size: 12px; color: var(--muted); }
+.v { font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.stage { position: relative; flex: 1; min-height: 0; background: #111; overflow: hidden; }
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.stage video.mirror { transform: scaleX(-1); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.controls {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 12px; justify-content: center;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.btn { min-width: 120px; height: 48px; padding: 0 24px; border-radius: 24px; border: 0; font-size: 16px; font-weight: 500; }
+.btn.primary { background: var(--blue); color: #fff; }
+.btn.secondary { background: #fff; color: var(--blue); border: 1px solid var(--border); }
+.btn.danger { background: #fff; color: var(--red); border: 1px solid var(--border); }
+.btn:active { filter: brightness(0.92); }
+
+.sheet { position: fixed; inset: 0; background: rgba(32, 33, 36, 0.4); display: flex; align-items: flex-end; z-index: 10; }
+.sheet[hidden] { display: none; }
+.sheet-body {
+  width: 100%; max-height: 90dvh; overflow-y: auto; background: #fff; border-radius: 16px 16px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+}
+.sheet h2 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+.muted { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.sum-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0 16px; }
+.sum-grid div { display: flex; flex-direction: column; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
+.sum-grid .big { font-size: 28px; }
+.u { font-size: 12px; color: var(--muted); }
+.chart { width: 100%; height: 180px; display: block; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; justify-content: flex-end; }
+.history { list-style: none; margin: 8px 0 16px; padding: 0; }
+.history li { display: flex; justify-content: space-between; padding: 12px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.history li:active { background: var(--track); }
+.history .empty { color: var(--muted); cursor: default; justify-content: center; }
+.toggle { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin: 0 0 16px; }
+.toggle input { width: 20px; height: 20px; margin: 0; flex: none; }
+.version { margin-top: 16px; text-align: center; font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) { .ring-fill { transition: none; } }
