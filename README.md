@@ -3,7 +3,7 @@
 A web app that works like Google Fit's camera respiratory-rate check, but
 **keeps running for as long as you want** instead of stopping after 30–60 s.
 
-**Use it:** https://tmad4000.github.io/breathe/ — open in Safari on an iPhone
+**Use it:** https://jacobcole.ai/breathe/ — open in Safari on an iPhone
 (or any phone browser), allow the camera, then Share → Add to Home Screen.
 
 ## How it works

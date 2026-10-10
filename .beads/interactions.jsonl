@@ -1,1 +1,2 @@
 {"id":"int-cf9c504c1bd2089f7df084631bac7b0e","kind":"field_change","created_at":"2026-10-10T20:03:21.838681Z","actor":"Jacob Cole","issue_id":"breathe-tracker-ji1","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-49f501fb279c2d878e59c415ed20df82","kind":"field_change","created_at":"2026-10-10T20:19:23.523083Z","actor":"Jacob Cole","issue_id":"breathe-tracker-ji1","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Built, e2e-verified at 9/15/24 bpm, served on tailnet :8968"}}
