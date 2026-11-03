@@ -289,7 +289,7 @@ function updateUi(t, faceOk) {
     const co=r?.coherence;
     $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
     $('pulseQuality').textContent=paused?'Paused':r?`Signal: usable · ${co?'64 s window':'collecting clean 64 s window'}${r.coupling!=null?' · coupling '+Math.round(r.coupling*100)+'%':''}`:'Signal: waiting / poor — hold still in steady light';
-    drawTrend($('heartChart'),r?pulse.hr.map(x=>({t:x.t,bpm:x.v})):[]);
+    drawPulseTrend(!!r);
     if(mode()==='finger'){
       $('bpm').textContent=session.paceBpm??'--';$('elapsed').textContent=fmtDuration((t-guideStart)/1000);
       const guide=guidePhase();setStatus(paused?'Paused. Tap Resume.':`${guide?(guide.inhale?'Breathe in… ':'Breathe out… '):''}Cover the rear lens gently with your fingertip. ${torchNote}`);return;
@@ -399,7 +399,7 @@ function stop() {
   releaseWakeLock();
   stopClip();
   stopCamera();
-  if(pulse){pulse.reset();$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(pulse){pulse.reset();drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
@@ -604,3 +604,6 @@ window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []
 $('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.reset();updateUi(performance.now(),false);}},500);
+
+function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pulse.hr.map(x=>({t:x.t,bpm:x.v})):pulse.rr.map(x=>({t:x.t,bpm:60000/x.v}))):[]);}
+new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
