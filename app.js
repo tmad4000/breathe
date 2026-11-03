@@ -1,7 +1,8 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.4.0';
+const VERSION = '0.4.1';
+import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
 const pulseCanvas = document.createElement('canvas');
@@ -157,7 +158,7 @@ function processFrame(t, mediaTime) {
       for(const r of rois){pulseCtx.drawImage(video,r.x*k,r.y*k,r.w*k,r.h*k,0,0,48,48);const d=pulseCtx.getImageData(0,0,48,48).data;for(let i=0;i<d.length;i+=4)for(let c=0;c<3;c++)rgb[c]+=d[i+c]/(48*48*rois.length);}
       const breath=faceOk && chest && t>=motionUntil ? session?.recentWaveform(1)?.at(-1):null;
       pulse.push(Number.isFinite(mediaTime)?mediaTime:t/1000,rgb,breath);
-    }else pulse.reset();
+    }else pulse.loseSignal(Number.isFinite(mediaTime)?mediaTime:t/1000);
   }
 
 
@@ -284,7 +285,7 @@ function updateUi(t, faceOk) {
   if (!running) return;
   if(pulse){
     const r=!paused ? pulse.result:null;
-    $('heartRate').textContent=r?Math.round(r.hr):'--';
+    renderLiveRates(document,r?.hr,null);
     $('rmssd').textContent=r?.rmssd?.toFixed(0)??'--';
     const co=r?.coherence;
     $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
@@ -302,6 +303,7 @@ function updateUi(t, faceOk) {
   else steadySince ??= t;
   const rate = steady && t - steadySince >= RECOVER_MS ? session.currentRate() : null;
   $('bpm').textContent = rate ? Math.round(rate.bpm) : '--';
+  if(pulse)renderLiveRates(document,!paused?pulse.result?.hr:null,rate?.bpm);
   $('elapsed').textContent = fmtDuration(session.activeS);
   $('breaths').textContent = session.breaths.length;
   const avg = session.averageRate();
@@ -399,7 +401,7 @@ function stop() {
   releaseWakeLock();
   stopClip();
   stopCamera();
-  if(pulse){pulse.reset();drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(pulse){pulse.reset();drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
@@ -601,9 +603,9 @@ loadDetector().catch(() => {}); // warm up while the user gets positioned
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
 
-setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.reset();updateUi(performance.now(),false);}},500);
+setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
 function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pulse.hr.map(x=>({t:x.t,bpm:x.v})):pulse.rr.map(x=>({t:x.t,bpm:60000/x.v}))):[]);}
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));

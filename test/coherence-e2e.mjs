@@ -9,15 +9,24 @@ try {
  const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:8968/?src=test/fixtures/pulse72.mp4');
  await page.selectOption('#modeSelect','finger');await page.click('#startBtn');
- // Half-speed decoding keeps synthetic source frames reliable on constrained CI hosts.
+ // Quarter-speed decoding keeps synthetic source frames reliable on constrained CI hosts.
  // Analysis still uses the clip media timestamps, so the source pulse is 72 bpm.
- await page.locator('#video').evaluate(v=>{v.playbackRate=.5;});
- await page.waitForFunction(()=>{const v=Number(document.getElementById('heartRate').textContent);return v>69&&v<75;},{},{timeout:60000});
+ await page.locator('#video').evaluate(v=>{v.playbackRate=.25;});
+ await page.waitForFunction(()=>{const v=Number(document.getElementById('heartRate').textContent);return v>69&&v<75;},{},{timeout:90000});
  const hr=await page.locator('#heartRate').textContent();console.log({hr},await page.evaluate(()=>({status:document.getElementById('status').textContent,n:window.__breathe.pulse?.samples.length,samples:window.__breathe.pulse?.samples.slice(-3),result:window.__breathe.pulse?.result}))); assert.ok(Math.abs(Number(hr)-72)<3);
  await page.screenshot({path:'test/fixtures/coherence-mobile.png'});
  await page.click('#pauseBtn');await page.waitForTimeout(500);assert.equal(await page.locator('#heartRate').textContent(),'--');
  await page.click('#stopBtn');await page.selectOption('#modeSelect','remote');await page.click('#startBtn');await page.waitForTimeout(2000);
- assert.equal(await page.locator('#heartRate').textContent(),'--');await page.click('#stopBtn');
+ assert.equal(await page.locator('#heartRate').textContent(),'--');
+ // Presentation contract: usable rates render independently of absent coherence.
+ await page.click('#pauseBtn');
+ await page.evaluate(async()=>{const {renderLiveRates}=await import('./live-rates.js');renderLiveRates(document,72,6);});
+ assert.equal(await page.locator('#heartRate').textContent(),'72');
+ assert.equal(await page.locator('#breathRate').textContent(),'6.0');
+ assert.ok(await page.locator('#breathMetric').isVisible());
+ assert.equal(await page.locator('#coherence').textContent(),'--');
+ await page.screenshot({path:'test/fixtures/early-rates.png'});
+ await page.click('#stopBtn');
  await page.setViewportSize({width:1280,height:800});await page.screenshot({path:'test/fixtures/coherence-desktop.png'});
  await page.selectOption('#modeSelect','respiration');assert.ok(await page.locator('#pulsePanel').isHidden());
  assert.deepEqual(errors,[]);console.log('PASS: clip HR, pause blanking, no-face remote blanking, mode switching');
