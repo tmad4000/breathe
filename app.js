@@ -3,7 +3,7 @@ import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
 const VERSION = '0.4.0';
 import { PulseSession } from './coherence.js';
-let pulse = null, torchNote = '';
+let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
 const pulseCanvas = document.createElement('canvas');
 pulseCanvas.width = 48; pulseCanvas.height = 48;
 const pulseCtx = pulseCanvas.getContext('2d', {willReadFrequently:true});
@@ -144,6 +144,7 @@ function processFrame(t, mediaTime) {
     lastDetectT = t;
     detectFace(t);
   }
+  pulseFrameAt=t;
   const faceOk = t - faceSeenAt < FACE_LOST_MS;
   if(pulse && running && !paused){
     if(mode()==='finger' || (faceOk && t>=motionUntil)){
@@ -601,3 +602,5 @@ loadDetector().catch(() => {}); // warm up while the user gets positioned
 window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
 $('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+
+setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.reset();updateUi(performance.now(),false);}},500);
