@@ -77,10 +77,10 @@ clips only; real-phone accuracy still needs guided sessions. Background research
 
 Not a medical device.
 
-## Coherence prototype (v0.4.0)
+## Coherence prototype (v0.4.1)
 
 Choose **Coherence · fingertip** for rear-camera contact PPG, HR, pulse-interval RMSSD and a 64-second spectral coherence ratio. Cover the lens gently; the torch is enabled when supported, otherwise use bright light. Choose **Coherence · hands-free** for experimental face POS pulse estimation alongside chest respiration. Its score combines slow HR spectral concentration and segmented breath–heart coherence; it does not report beat-level RMSSD. Neither mode is calibrated to HeartMath devices.
 
-Signal loss, pauses and poor-quality windows clear estimates. Scores need 64 seconds of continuous clean data after pulse acquisition. Settings provides 5, 5.5 and 6 breaths/min pacing with existing ring/audio cues. Coherence sessions currently display live only; respiration history/export remains unchanged. Stop releases camera and torch.
+Signal loss, pauses and poor-quality windows blank estimates. Brief analysis failures retain history; gaps of three seconds or more invalidate continuity. Scores need a valid 64-second window after pulse acquisition. Hands-free HR and breathing rate display independently before coherence becomes available. Settings provides 5, 5.5 and 6 breaths/min pacing with existing ring/audio cues. Coherence sessions currently display live only; respiration history/export remains unchanged. Stop releases camera and torch.
 
 Validation design and real-device comparison plan: [docs/coherence-design.md](docs/coherence-design.md). Unit tests: `npm test`. Synthetic clip browser test: `node test/coherence-e2e.mjs` with the local server running and `test/fixtures/pulse72.mp4` generated as documented in the test. Camera accuracy on actual phones is unvalidated.

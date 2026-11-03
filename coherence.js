@@ -1,13 +1,13 @@
 // Camera pulse research prototype. Times are seconds; pulse intervals milliseconds.
 export const mean = a => a.reduce((s,x)=>s+x,0)/a.length;
 const sd = a => Math.sqrt(mean(a.map(x=>(x-mean(a))**2)));
-export function resample(points, hz=4, seconds=64) {
+export function resample(points, hz=4, seconds=64, end=points.at(-1)?.t) {
   if(points.length<2) return [];
-  const end=points.at(-1).t, start=end-seconds;
+  const start=end-seconds;
   if(points[0].t>start) return [];
   let j=0; const out=[];
   for(let t=start;t<end;t+=1/hz){while(j+1<points.length && points[j+1].t<t)j++;
-    const a=points[j],b=points[j+1]; if(!b || b.t-a.t>3)return [];
+    const a=points[j],b=points[j+1]; if(!b || b.t-a.t>=3)return [];
     out.push(a.v+(b.v-a.v)*(t-a.t)/(b.t-a.t));}
   return out;
 }
@@ -67,19 +67,42 @@ export function coupling(a,b,f,hz=4){
   }return Math.min(1,(crossR**2+crossI**2)/Math.max(pa*pb,1e-12));
 }
 export class PulseSession {
-  constructor(remote=false){this.remote=remote;this.samples=[];this.rr=[];this.hr=[];this.breath=[];this.result=null;this.last=0;}
-  reset(){this.samples=[];this.rr=[];this.hr=[];this.breath=[];this.result=null;this.last=0;}
+  constructor(remote=false){this.remote=remote;this.reset();}
+  reset(){this.samples=[];this.rr=[];this.hr=[];this.breath=[];this.result=null;this.last=-Infinity;this.goodAt=null;this.lastInput=null;}
+  // A brief failed analysis blanks the display, not the accumulated history.
+  loseSignal(t){
+    this.result=null;
+    if(this.goodAt!==null && t-this.goodAt>=3){
+      this.rr=[];this.hr=[];this.breath=[];this.goodAt=null;
+    }
+  }
   push(t,rgb,breath=null){
-    if(this.samples.length&&(t-this.samples.at(-1).t>.2 || t<=this.samples.at(-1).t))this.reset();
-    if(rgb.some(v=>!Number.isFinite(v)||v<5||v>250)){this.reset();return;}
+    if(this.lastInput!==null && t<=this.lastInput)this.reset();
+    this.lastInput=t;
+    if(this.goodAt!==null && t-this.goodAt>=3)this.loseSignal(t);
+    if(this.samples.length && t-this.samples.at(-1).t>.2)this.samples=[];
+    if(rgb.some(v=>!Number.isFinite(v)||v<5||v>250)){this.loseSignal(t);return;}
     this.samples.push({t,rgb});this.samples=this.samples.filter(x=>x.t>t-10);
     if(t-this.last<1)return;this.last=t;
-    const r=pulseAnalysis(this.samples,this.remote);this.result=r;
-    if(!r){this.rr=[];this.hr=[];this.breath=[];return;}
-    for(const p of r.rr)if(!this.rr.length||p.t>this.rr.at(-1).t+.2)this.rr.push(p);
-    this.rr=this.rr.filter(x=>x.t>t-80);this.hr.push({t,v:r.hr});this.hr=this.hr.filter(x=>x.t>t-80);
-    if(Number.isFinite(breath))this.breath.push({t,v:breath});this.breath=this.breath.filter(x=>x.t>t-80);
-    const a=resample(this.remote?this.hr:this.rr);r.coherence=coherence(a);r.rmssd=this.remote?null:rmssd(this.rr.map(x=>x.v));
-    if(this.remote&&r.coherence){r.coupling=coupling(a,resample(this.breath),r.coherence.frequency);if(r.coupling===null)r.coherence=null;else r.coherence.ratio*=r.coupling;}
+    this.acceptAnalysis(t,pulseAnalysis(this.samples,this.remote),breath);
+  }
+  acceptAnalysis(t,r,breath=null){
+    if(!r){this.loseSignal(t);return;}
+    if(this.goodAt!==null && t-this.goodAt>=3)this.loseSignal(t);
+    this.result=r;this.goodAt=t;
+    for(const p of r.rr)if(!this.rr.length||p.t>this.rr.at(-1).t+.2){
+      this.rr.push(p);
+      // Beat-level HR preserves resonance; no 10-second boxcar in the trace.
+      this.hr.push({t:p.t,v:60000/p.v});
+    }
+    this.rr=this.rr.filter(x=>x.t>t-80);this.hr=this.hr.filter(x=>x.t>t-80);
+    if(Number.isFinite(breath))this.breath.push({t,v:breath});
+    this.breath=this.breath.filter(x=>x.t>t-80);
+    // Align both signals on the same clock and never extrapolate across a gap.
+    const end=this.remote?Math.min(this.hr.at(-1)?.t??t,this.breath.at(-1)?.t??t):this.rr.at(-1)?.t;
+    const a=resample(this.remote?this.hr:this.rr,4,64,end);
+    r.coherence=coherence(a);r.rmssd=this.remote?null:rmssd(this.rr.map(x=>x.v));
+    if(this.remote && (!Number.isFinite(breath) || t-(this.breath.at(-1)?.t??-Infinity)>=3))r.coherence=null;
+    if(this.remote&&r.coherence){r.coupling=coupling(a,resample(this.breath,4,64,end),r.coherence.frequency);if(r.coupling===null)r.coherence=null;else r.coherence.ratio*=r.coupling;}
   }
 }
