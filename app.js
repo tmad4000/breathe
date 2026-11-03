@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.4.1';
+const VERSION = '0.4.2';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -289,10 +289,10 @@ function updateUi(t, faceOk) {
     $('rmssd').textContent=r?.rmssd?.toFixed(0)??'--';
     const co=r?.coherence;
     $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
-    $('pulseQuality').textContent=paused?'Paused':r?`Signal: usable · ${co?'64 s window':'collecting clean 64 s window'}${r.coupling!=null?' · coupling '+Math.round(r.coupling*100)+'%':''}`:'Signal: waiting / poor — hold still in steady light';
+    $('pulseQuality').textContent=paused?'Paused':r?`Signal: usable · ${co?'64 s window':pulse.warmupSeconds()>0?'Coherence in '+pulse.warmupSeconds()+' s':'Analyzing coherence…'}${r.coupling!=null?' · coupling '+Math.round(r.coupling*100)+'%':''}`:`Signal: waiting / poor · Coherence in ${pulse.warmupSeconds()} s of usable signal`;
     drawPulseTrend(!!r);
     if(mode()==='finger'){
-      $('bpm').textContent=session.paceBpm??'--';$('elapsed').textContent=fmtDuration((t-guideStart)/1000);
+      $('bpm').textContent=co?co.ratio.toFixed(1):r?String(Math.round(r.hr)):'--';$('ringUnit').textContent=co?'coherence':'heart bpm';document.querySelector('.ring').setAttribute('aria-label',co?'Coherence score and breathing guide':'Heart rate and breathing guide');$('elapsed').textContent=fmtDuration((t-guideStart)/1000);
       const guide=guidePhase();setStatus(paused?'Paused. Tap Resume.':`${guide?(guide.inhale?'Breathe in… ':'Breathe out… '):''}Cover the rear lens gently with your fingertip. ${torchNote}`);return;
     }
   }
@@ -302,6 +302,7 @@ function updateUi(t, faceOk) {
   if (!steady) steadySince = null;
   else steadySince ??= t;
   const rate = steady && t - steadySince >= RECOVER_MS ? session.currentRate() : null;
+  $('ringUnit').textContent='breaths/min';
   $('bpm').textContent = rate ? Math.round(rate.bpm) : '--';
   if(pulse)renderLiveRates(document,!paused?pulse.result?.hr:null,rate?.bpm);
   $('elapsed').textContent = fmtDuration(session.activeS);
@@ -401,7 +402,7 @@ function stop() {
   releaseWakeLock();
   stopClip();
   stopCamera();
-  if(pulse){pulse.reset();drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(pulse){pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
@@ -603,7 +604,7 @@ loadDetector().catch(() => {}); // warm up while the user gets positioned
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 

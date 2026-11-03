@@ -14,6 +14,14 @@ try {
  await page.locator('#video').evaluate(v=>{v.playbackRate=.25;});
  await page.waitForFunction(()=>{const v=Number(document.getElementById('heartRate').textContent);return v>69&&v<75;},{},{timeout:90000});
  const hr=await page.locator('#heartRate').textContent();console.log({hr},await page.evaluate(()=>({status:document.getElementById('status').textContent,n:window.__breathe.pulse?.samples.length,samples:window.__breathe.pulse?.samples.slice(-3),result:window.__breathe.pulse?.result}))); assert.ok(Math.abs(Number(hr)-72)<3);
+ const ringBefore=await page.locator('#ringFill').getAttribute('style');
+ await page.waitForTimeout(300);
+ assert.notEqual(await page.locator('#ringFill').getAttribute('style'),ringBefore,'guide should animate the ring');
+ const measuredRmssd=await page.evaluate(()=>window.__breathe.pulse.result?.rmssd);
+ assert.ok(Number.isFinite(measuredRmssd)&&measuredRmssd<10,`constant pulse RMSSD ${measuredRmssd} ms must be <10`);
+ assert.equal(await page.locator('#bpm').textContent(),hr);
+ assert.equal(await page.locator('#ringUnit').textContent(),'heart bpm');
+ assert.match(await page.locator('#pulseQuality').textContent(),/Coherence in \d+ s/);
  await page.screenshot({path:'test/fixtures/coherence-mobile.png'});
  await page.click('#pauseBtn');await page.waitForTimeout(500);assert.equal(await page.locator('#heartRate').textContent(),'--');
  await page.click('#stopBtn');await page.selectOption('#modeSelect','remote');await page.click('#startBtn');await page.waitForTimeout(2000);

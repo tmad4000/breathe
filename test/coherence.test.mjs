@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {coherence,rmssd,pulseAnalysis,PulseSession,coupling,resample} from '../coherence.js';
+import {coherence,rmssd,pulseAnalysis,PulseSession,coupling,resample,warmupRemaining} from '../coherence.js';
 test('0.1 Hz RR is coherent; deterministic noise is not',()=>{let seed=123;const noise=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/2**32;};const sine=Array.from({length:256},(_,i)=>800+60*Math.sin(2*Math.PI*.1*i/4));const random=Array.from({length:256},()=>800+100*noise());assert.ok(coherence(sine).ratio>2);assert.ok(coherence(random).ratio<.5);assert.equal(coherence(Array(256).fill(800)),null);});
 test('RMSSD known intervals',()=>assert.equal(rmssd([800,810,800]),10));
 test('30 fps contact pulse recovers 72 bpm and rejects frozen/dropped frames',()=>{const samples=Array.from({length:300},(_,i)=>({t:i/30,rgb:[180,100+3*Math.sin(2*Math.PI*1.2*i/30),70]}));const r=pulseAnalysis(samples);assert.ok(r);assert.ok(Math.abs(r.hr-72)<1);assert.equal(pulseAnalysis(samples.filter((_,i)=>i%3===0)),null);assert.equal(pulseAnalysis(samples.map(s=>({...s,rgb:[180,100,70]}))),null);});
@@ -44,4 +44,34 @@ test('resampling bridges only gaps shorter than three seconds',()=>{
  const points=Array.from({length:81},(_,t)=>({t,v:Math.sin(t)}));
  assert.equal(resample(points.filter(p=>p.t!==40)).length,256);
  assert.equal(resample(points.filter(p=>p.t!==40&&p.t!==41)).length,0);
+});
+
+test('constant contact pulse has <10 ms RMSSD with irregular source timestamps',()=>{
+  const p=new PulseSession();
+  for(let i=0;i<1200;i++){
+    if(i%17===0)continue;
+    const t=i/30+.001*Math.sin(i*1.7);
+    p.push(t,[180,100+8*Math.sin(2*Math.PI*1.2*t),70]);
+  }
+  assert.ok(p.result?.rmssd<10,`${p.result?.rmssd} ms`);
+  assert.ok(Math.abs(p.result.hr-72)<1);
+});
+
+test('warmup countdown follows usable time and restarts across large gaps',()=>{
+ assert.equal(warmupRemaining([]),64);
+ const p=Array.from({length:23},(_,t)=>({t,v:800}));
+ assert.equal(warmupRemaining(p),42);
+ p.push({t:26,v:800});assert.equal(warmupRemaining(p),64);
+ assert.equal(warmupRemaining(Array.from({length:66},(_,t)=>({t,v:800}))),0);
+ const session=new PulseSession();session.rr=p;session.reset();assert.equal(session.warmupSeconds(),64);
+});
+
+test('quantized flat-top contact peaks retain near-zero RMSSD with missing frames',()=>{
+  // One decoded cycle from the constant 72 bpm H.264 fixture, including its plateau.
+  const green=[100,101,103,106,107,107,107,107,107,107,104,102,101,97,97,95,93,92,92,92,92,93,94,95,97];
+  for(const skip of [0,7,11]){
+    const p=new PulseSession();
+    for(let i=0;i<1200;i++){if(skip&&i%skip===0)continue;p.push(i/30,[180,green[i%25],70]);}
+    assert.ok(p.result?.rmssd<10,`skip ${skip}: ${p.result?.rmssd} ms`);
+  }
 });
