@@ -1,7 +1,13 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
+import { PulseSession } from './coherence.js';
+let pulse = null, torchNote = '';
+const pulseCanvas = document.createElement('canvas');
+pulseCanvas.width = 48; pulseCanvas.height = 48;
+const pulseCtx = pulseCanvas.getContext('2d', {willReadFrequently:true});
+const mode = () => document.getElementById('modeSelect').value;
 const RECOVER_MS = 5000;          // steady tracking needed before a rate is shown again
 const PROC_MAX_SIDE = 256;       // face/overlay coordinate frame (longest side, px)
 const CHEST_W = 200;             // chest crop width for motion analysis, px
@@ -22,6 +28,7 @@ const cctx = crop.getContext('2d', { willReadFrequently: true });
 let detector = null;
 let detectorPromise = null;
 let stream = null;
+let cameraGeneration = 0;
 let facing = 'user';
 let mirrored = true;
 const TEST_SRC = new URLSearchParams(location.search).get('src');
@@ -59,6 +66,8 @@ function loadDetector() {
 
 async function startCamera() {
   stopCamera();
+  pulse?.reset();
+  if(mode() !== 'respiration') facing = mode() === 'finger' ? 'environment' : 'user';
   if (TEST_SRC) {
     // Dev/test input: a looping video file instead of the camera (?src=clip.mp4).
     stream = { getTracks: () => [], getVideoTracks: () => [] };
@@ -73,6 +82,12 @@ async function startCamera() {
     video.srcObject = stream;
     mirrored = facing === 'user';
   }
+  torchNote = '';
+  if(mode() === 'finger' && !TEST_SRC){
+    const track=stream.getVideoTracks()[0];
+    try { if(!track.getCapabilities?.().torch) throw new Error(); await track.applyConstraints({advanced:[{torch:true}]}); torchNote='Torch on.'; }
+    catch { torchNote='Torch unavailable: use bright light behind your finger.'; }
+  }
   video.classList.toggle('mirror', mirrored);
   await video.play();
   const s = PROC_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight);
@@ -83,22 +98,25 @@ async function startCamera() {
 }
 
 function stopCamera() {
+  cameraGeneration++;
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
 }
 
 function scheduleFrame() {
   if (!stream) return;
-  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(() => onFrame());
-  else requestAnimationFrame(() => onFrame());
+  const generation=cameraGeneration;
+  const next=(_,metadata)=>{if(generation===cameraGeneration)onFrame(metadata?.mediaTime);};
+  if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(next);
+  else requestAnimationFrame(next);
 }
 
 // ---------- per-frame processing ----------
 
-function onFrame() {
+function onFrame(mediaTime) {
   if (!stream) return;
   const t = performance.now();
-  if (video.readyState >= 2 && PW) processFrame(t);
+  if (video.readyState >= 2 && PW) processFrame(t, mediaTime);
   scheduleFrame();
 }
 
@@ -121,12 +139,26 @@ function setChest(rect) {
   havePrev = false;
 }
 
-function processFrame(t) {
-  if (detector && frameIdx++ % DETECT_EVERY === 0 && t > lastDetectT) {
+function processFrame(t, mediaTime) {
+  if (mode() !== 'finger' && detector && frameIdx++ % DETECT_EVERY === 0 && t > lastDetectT) {
     lastDetectT = t;
     detectFace(t);
   }
   const faceOk = t - faceSeenAt < FACE_LOST_MS;
+  if(pulse && running && !paused){
+    if(mode()==='finger' || (faceOk && t>=motionUntil)){
+      const k=video.videoWidth/PW;
+      const rois=mode()==='finger'?[{x:PW*.25,y:PH*.25,w:PW*.5,h:PH*.5}]:[
+        {x:face.x+face.w*.25,y:face.y+face.h*.12,w:face.w*.5,h:face.h*.18},
+        {x:face.x+face.w*.12,y:face.y+face.h*.55,w:face.w*.22,h:face.h*.2},
+        {x:face.x+face.w*.66,y:face.y+face.h*.55,w:face.w*.22,h:face.h*.2}];
+      const rgb=[0,0,0];
+      for(const r of rois){pulseCtx.drawImage(video,r.x*k,r.y*k,r.w*k,r.h*k,0,0,48,48);const d=pulseCtx.getImageData(0,0,48,48).data;for(let i=0;i<d.length;i+=4)for(let c=0;c<3;c++)rgb[c]+=d[i+c]/(48*48*rois.length);}
+      const breath=faceOk && chest && t>=motionUntil ? session?.recentWaveform(1)?.at(-1):null;
+      pulse.push(Number.isFinite(mediaTime)?mediaTime:t/1000,rgb,breath);
+    }else pulse.reset();
+  }
+
 
   if (running && !paused && faceOk && chest) {
     grabChest();
@@ -249,6 +281,19 @@ function setStatus(text) {
 
 function updateUi(t, faceOk) {
   if (!running) return;
+  if(pulse){
+    const r=!paused ? pulse.result:null;
+    $('heartRate').textContent=r?Math.round(r.hr):'--';
+    $('rmssd').textContent=r?.rmssd?.toFixed(0)??'--';
+    const co=r?.coherence;
+    $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
+    $('pulseQuality').textContent=paused?'Paused':r?`Signal: usable · ${co?'64 s window':'collecting clean 64 s window'}${r.coupling!=null?' · coupling '+Math.round(r.coupling*100)+'%':''}`:'Signal: waiting / poor — hold still in steady light';
+    drawTrend($('heartChart'),r?pulse.hr.map(x=>({t:x.t,bpm:x.v})):[]);
+    if(mode()==='finger'){
+      $('bpm').textContent=session.paceBpm??'--';$('elapsed').textContent=fmtDuration((t-guideStart)/1000);
+      const guide=guidePhase();setStatus(paused?'Paused. Tap Resume.':`${guide?(guide.inhale?'Breathe in… ':'Breathe out… '):''}Cover the rear lens gently with your fingertip. ${torchNote}`);return;
+    }
+  }
   // Never show a stale number: blank the rate as soon as tracking is lost or you
   // move, and wait for a few seconds of steady tracking before showing it again.
   const steady = !paused && faceOk && chest && t >= motionUntil;
@@ -307,6 +352,8 @@ function cue(inhale) {
 })();
 
 function setControls() {
+  $('modeSelect').disabled = running;
+  $('flipBtn').disabled = running || mode() !== 'respiration';
   $('startBtn').hidden = running;
   $('pauseBtn').hidden = !running;
   $('stopBtn').hidden = !running;
@@ -315,16 +362,20 @@ function setControls() {
 
 async function start() {
   $('startBtn').disabled = true;
+  $('modeSelect').disabled = true;
   setStatus('Starting camera…');
   try {
     if (!stream) await startCamera();
     setStatus('Loading tracker…');
-    await loadDetector();
+    if(mode() !== 'finger') await loadDetector();
   } catch (err) {
+    stopCamera();
+    $('modeSelect').disabled = false;
     $('startBtn').disabled = false;
     setStatus(cameraErrorText(err));
     return;
   }
+  pulse = mode() === 'respiration' ? null : new PulseSession(mode() === 'remote');
   const pace = Number($('paceSelect').value) || null;
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
@@ -346,6 +397,8 @@ function stop() {
   setControls();
   releaseWakeLock();
   stopClip();
+  stopCamera();
+  if(pulse){pulse.reset();$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
@@ -396,7 +449,8 @@ async function requestWakeLock() {
 function releaseWakeLock() { wakeLock?.release().catch(() => {}); wakeLock = null; }
 
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState !== 'visible' || !running) return;
+  if(document.visibilityState !== 'visible'){pulse?.reset();return;}
+  if (!running) return;
   requestWakeLock();
   // iOS ends the camera track when the app is backgrounded; reopen it.
   if (!stream || stream.getVideoTracks().every((tr) => tr.readyState === 'ended')) {
@@ -521,7 +575,7 @@ function renderHistory() {
 
 $('startBtn').onclick = start;
 $('stopBtn').onclick = stop;
-$('pauseBtn').onclick = () => { paused = !paused; lastTrackedT = -Infinity; setControls(); };
+$('pauseBtn').onclick = () => { paused = !paused; pulse?.reset(); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls(); };
 $('doneBtn').onclick = () => { $('summarySheet').hidden = true; };
 $('exportBtn').onclick = exportCsv;
 $('historyBtn').onclick = () => { renderHistory(); $('historySheet').hidden = false; };
@@ -544,4 +598,6 @@ $('flipBtn').onclick = async () => {
 loadDetector().catch(() => {}); // warm up while the user gets positioned
 
 // Test hook for automated end-to-end checks.
-window.__breathe = { startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
+window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
+
+$('modeSelect').onchange=()=>{stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
