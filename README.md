@@ -36,7 +36,7 @@ chest (optical flow). Everything runs on the phone; no video leaves the device.
    and returns only after 5 s of steady tracking. Every 10 s the rate is logged
    to a trend.
 
-**Checking accuracy:** History & settings → Breathing guide. Follow the ring
+**Checking accuracy:** Settings (gear, top left) → Breathing guide. Follow the ring
 in and out at a known pace (e.g. 10/min); soft tones mark each breath in and
 out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
@@ -52,6 +52,16 @@ your pace. With no tracking it still guides, on a schedule. The view is a lane:
 the blue guide scrolls toward a "now" line and your breath is the white trace
 and dot, over a dimmed camera picture. The logic is `coach.js` (pure, tested in
 `test/coach.test.mjs` against simulated people). Thresholds are first guesses.
+
+**v0.9.0, settings and updates:** the top-left gear opens Settings & history
+(settings first). Next to it is the running version in small grey text. When a
+newer version is deployed, that text becomes **Update · tap to reload**. It never
+reloads by itself, and tapping it ends a running session the usual way (saving
+it) before reloading. The page checks `version.json` on load, every 10 minutes
+and when the tab comes back into view. The checks are silent when offline and
+never offer an older version. Releases bump the version in `package.json`,
+`version.json` and `VERSION` in `app.js` together; `npm test` fails if they
+differ.
 
 **v0.8.0, coach patterns and full-height targets:** Settings → Coach pattern
 chooses the destination: 5 in · hold 1 · 5 out · hold 1 (default), 5 in · 5 out,
@@ -72,7 +82,7 @@ face and chest boxes are fully on screen.
 in/out scale that stay put; the frame is taken from the chest box, which only
 moves when you do, not from the face box.
 
-**Breath line size:** History & settings → Breath line. "Large" (default) draws
+**Breath line size:** Settings → Breath line. "Large" (default) draws
 the line across both boxes, "Fills the chest box" keeps it inside the lower
 box, "Small" is the compact upper-chest line. It always stays above the
 Pause/Stop buttons.
@@ -104,7 +114,13 @@ is GitHub Pages from `main`.
 npm test                                         # signal-processing unit tests
 test/make-fixtures.sh path/to/screenshot.png     # synthetic breathing clips (ffmpeg)
 node test/e2e.mjs http://127.0.0.1:8968/ test/fixtures/b15.mp4 15 60
+node test/update-e2e.mjs                         # version text and update notice
 ```
+
+Browser tests use the global `playwright` and installed Chrome by default.
+Elsewhere, set `PLAYWRIGHT_MODULE=/path/to/node_modules/playwright-core` and
+`BROWSER_PATH=/path/to/chrome`. `BROWSER_NO_SANDBOX=1` adds `--no-sandbox` for
+hosts that need it.
 
 `?src=clip.mp4` replaces the camera with a looping video file, which is useful
 for end-to-end tests and for analyzing recorded clips. Chrome's fake camera

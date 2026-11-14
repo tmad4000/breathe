@@ -1,10 +1,7 @@
 // Fixture: ffmpeg -f lavfi -i "nullsrc=s=160x120:r=30:d=20,geq=r='180':g='100+8*sin(2*PI*1.2*T)':b='70'" -c:v libx264 -crf 10 -pix_fmt yuv420p test/fixtures/pulse72.mp4
-import {createRequire} from 'node:module';
-import {execSync} from 'node:child_process';
 import assert from 'node:assert/strict';
-const require=createRequire(import.meta.url);
-const {chromium}=require(`${execSync('npm root -g').toString().trim()}/playwright`);
-const browser=await chromium.launch({channel:'chrome'});
+import {launch} from './browser.mjs';
+const browser=await launch();
 try {
  const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:8968/?src=test/fixtures/pulse72.mp4');

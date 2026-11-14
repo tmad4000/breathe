@@ -1,13 +1,10 @@
 // The iOS shell's bridge, exercised in Chrome with a stand-in for the native side:
 // front frames come from a breathing clip, the fingertip colour pulses at 72 bpm.
 // Usage: node test/native-e2e.mjs [baseUrl] [clip]   (server running; clip has a face and chest)
-import { createRequire } from 'node:module';
-import { execSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-const require = createRequire(import.meta.url);
-const { chromium } = require(`${execSync('npm root -g').toString().trim()}/playwright`);
+import { launch } from './browser.mjs';
 const [base = 'http://127.0.0.1:8968/', clip = 'test/fixtures/b12-face.mp4'] = process.argv.slice(2);
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launch();
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
