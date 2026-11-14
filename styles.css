@@ -102,3 +102,13 @@ button { font: inherit; cursor: pointer; }
 #heartIcon.beating { fill: var(--red); animation: heartbeat 1s ease-in-out infinite; }
 @keyframes heartbeat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.28); } 30% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #heartIcon.beating { animation: none; } }
+
+/* Measured breath phase: which way the breath was last judged to turn. */
+.phase { font-style: normal; font-size: 11px; font-weight: 600; line-height: 1; color: var(--muted); margin-bottom: 1px; }
+.phase.in { color: var(--blue); }
+.phase[hidden] { display: none; }
+.ring.turn .ring-track { animation: turnflash 0.6s ease-out; }
+@keyframes turnflash { 0% { stroke: var(--blue); stroke-width: 9; } 100% { stroke: var(--track); stroke-width: 6; } }
+@media (prefers-reduced-motion: reduce) { .ring.turn .ring-track { animation: none; } }
+body:has(#pulsePanel:not([hidden])) .ring-label span { font-size: 24px; }
+body:has(#pulsePanel:not([hidden])) .ring-label small { font-size: 9.5px; }

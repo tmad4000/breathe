@@ -217,6 +217,11 @@ export class RespirationSession {
     this.filters = Array.from({ length: channels }, bandpass);
     this.displayFilters = Array.from({ length: channels }, displayFilter);
     this.display = [];           // lightly filtered projection for the waveform
+    this.turns = [];             // { t, exhale }: where the breath was judged to turn
+    this.turnDir = 0;            // 1 rising (inhale), -1 falling (exhale), 0 unknown
+    this.turnExt = 0;
+    this.turnExtT = 0;
+    this.displayT = 0;           // active-clock time of the newest display sample
     this.history = [];           // recent band-passed channel vectors (PCA window)
     this.weights = null;         // current projection (unit vector)
     this.samples = [];           // projected respiration signal at SAMPLE_HZ
@@ -250,6 +255,8 @@ export class RespirationSession {
         if (this.weights) shown += this.weights[c] * d;
       }
       this.display.push(shown);
+      this.displayT = this.nextSampleS;
+      if (this.weights) this.#detectTurn(this.nextSampleS, shown);
       if (this.display.length > SAMPLE_HZ * 60) this.display.shift();
       this.#addSample(this.nextSampleS, x);
       this.nextSampleS += 1 / SAMPLE_HZ;
@@ -332,6 +339,36 @@ export class RespirationSession {
         if (last === undefined || this.peakT - last >= MIN_BREATH_GAP_S) this.breaths.push(this.peakT);
       }
     }
+  }
+
+  // Live inhale/exhale turns on the low-delay display line. A turn is declared
+  // once the line has come back from its latest extreme by a margin scaled to
+  // the recent breath size, and is stamped at that extreme. This runs about a
+  // tenth of a breath behind; the breath count above stays the stricter judge.
+  #detectTurn(t, v) {
+    const win = this.display.slice(-SAMPLE_HZ * 15);
+    if (win.length < SAMPLE_HZ * 4) return;
+    let ss = 0;
+    for (const x of win) ss += x * x;
+    const margin = Math.max(0.3 * Math.sqrt(ss / win.length), 1e-6);
+    if (!this.turnDir) { this.turnDir = 1; this.turnExt = v; this.turnExtT = t; return; }
+    if ((v - this.turnExt) * this.turnDir > 0) { this.turnExt = v; this.turnExtT = t; return; }
+    if ((this.turnExt - v) * this.turnDir < margin) return;
+    const last = this.turns[this.turns.length - 1];
+    // Ignore flutter faster than any real breath.
+    if (!last || this.turnExtT - last.t >= MIN_BREATH_GAP_S / 2) {
+      this.turns.push({ t: this.turnExtT, exhale: this.turnDir > 0 });
+      if (this.turns.length > 400) this.turns.shift();
+    }
+    this.turnDir = -this.turnDir; this.turnExt = v; this.turnExtT = t;
+  }
+
+  // 'in' | 'out' from the latest judged turn, or null when there is none yet
+  // or it is too old to describe the breath being taken now.
+  phase() {
+    const last = this.turns[this.turns.length - 1];
+    if (!last || this.displayT - last.t > 12) return null;
+    return last.exhale ? 'out' : 'in';
   }
 
   // Rate over the recent window. Breath-interval rate when it agrees with the

@@ -42,6 +42,13 @@ out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
 then replay it with `?src=`.
 
+**Seeing what it judged:** each time the tracker decides a breath has turned,
+it marks the spot on the breath line (solid dot: inhale became exhale; open dot:
+exhale became inhale), the ring flashes, and the ring and chest box say "in" or
+"out". The turn is called once the line has come back from its extreme by a
+margin scaled to recent breath size, so it trails the real turn by roughly a
+tenth of a breath. The breath count still uses the stricter peak detector.
+
 Sessions save to `localStorage` (History). The summary shows the trend chart
 and exports CSV through the iOS share sheet. Screen Wake Lock keeps the phone
 awake. If iOS kills the camera when you switch apps, it restarts when you come back.

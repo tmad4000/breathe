@@ -153,3 +153,23 @@ test('irregular frame timing still gives correct rate', () => {
   }
   assert.ok(Math.abs(s.currentRate().bpm - 10) < 0.7, `got ${s.currentRate()?.bpm}`);
 });
+
+test('live turns alternate and land near each end of inhale and exhale', () => {
+  const s = new RespirationSession(2);
+  let t = 0, prev = 0;
+  const f = 10 / 60;
+  while (t < 90) {
+    const dt = 1 / 30;
+    t += dt;
+    const pos = -0.5 * Math.sin(2 * Math.PI * f * t);
+    s.push(dt, [0.001 * Math.sin(t * 13), pos - prev], 80);
+    prev = pos;
+  }
+  const turns = s.turns.filter((x) => x.t > 30);
+  assert.ok(turns.length >= 18 && turns.length <= 21, `turns ${turns.length}`);
+  for (let i = 1; i < turns.length; i++) {
+    assert.notEqual(turns[i].exhale, turns[i - 1].exhale, 'turns alternate');
+    assert.ok(Math.abs(turns[i].t - turns[i - 1].t - 3) < 0.6, `half-breath spacing ${turns[i].t - turns[i - 1].t}`);
+  }
+  assert.ok(['in', 'out'].includes(s.phase()));
+});

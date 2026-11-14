@@ -243,6 +243,8 @@ function drawOverlay(faceOk) {
   const { dpr, sw, sh, rect } = viewMapping();
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, sw, sh);
+  const live = running && !paused && faceOk && chest && performance.now() >= motionUntil;
+  showPhase(live ? session?.phase() : null, live ? session.turns.length : 0);
   if (!faceOk || !face) return;
 
   octx.strokeStyle = 'rgba(255,255,255,0.95)';
@@ -283,6 +285,30 @@ function drawOverlay(faceOk) {
   octx.stroke();
   octx.shadowBlur = 0;
 
+  // Mark where each breath was judged to turn: solid dot = inhale became
+  // exhale, open dot = exhale became inhale.
+  const phase = session.phase();
+  for (const turn of session.turns) {
+    const i = wave.length - 1 - Math.round((session.displayT - turn.t) * 10);
+    if (i < 0 || i >= wave.length) continue;
+    const x = cr.x + pad + ((i + n - wave.length) / (n - 1)) * (cr.w - 2 * pad);
+    const y = mid - (wave[i] / waveScale) * amp;
+    octx.beginPath();
+    octx.arc(x, y, 5, 0, 2 * Math.PI);
+    octx.fillStyle = turn.exhale ? '#fff' : 'rgba(26,115,232,0.9)';
+    octx.lineWidth = 2;
+    octx.fill();
+    octx.stroke();
+  }
+  if (phase && performance.now() >= motionUntil) {
+    octx.font = '600 14px -apple-system, BlinkMacSystemFont, sans-serif';
+    octx.fillStyle = '#fff';
+    octx.shadowColor = 'rgba(0,0,0,0.6)';
+    octx.shadowBlur = 4;
+    octx.fillText(phase === 'in' ? '↑ Breathing in' : '↓ Breathing out', cr.x + 10, floor - 12);
+    octx.shadowBlur = 0;
+  }
+
   const last = wave[wave.length - 1];
   ringLevel = Math.max(0, Math.min(1, 0.5 + last / (2 * waveScale)));
 }
@@ -298,6 +324,24 @@ function setHeartbeat(hr) {
   const icon = $('heartIcon');
   icon.classList.toggle('beating', bpm !== null);
   if (bpm) icon.style.animationDuration = `${(60 / bpm).toFixed(2)}s`;
+}
+
+// Measured breath phase in the ring, with a brief flash each time a turn is judged.
+let shownPhase = null, shownTurns = 0;
+function showPhase(phase, turns) {
+  if (turns > shownTurns && phase) {
+    const ring = document.querySelector('.ring');
+    ring.classList.remove('turn');
+    void ring.offsetWidth; // restart the flash
+    ring.classList.add('turn');
+  }
+  shownTurns = turns;
+  if (phase === shownPhase) return;
+  shownPhase = phase;
+  const el = $('phase');
+  el.hidden = !phase;
+  el.textContent = phase === 'in' ? '↑ in' : phase === 'out' ? '↓ out' : '';
+  el.className = `phase ${phase ?? ''}`;
 }
 
 function setStatus(text) {
@@ -424,6 +468,7 @@ function stop() {
   if (!running) return;
   running = false; paused = false;
   setControls();
+  showPhase(null, 0);
   releaseWakeLock();
   stopClip();
   stopCamera();
