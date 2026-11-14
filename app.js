@@ -1,9 +1,12 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
+import { Coach } from './coach.js';
+let coach = null, coachLastTurn = -Infinity;
+const chestOnly = () => mode() === 'respiration' || mode() === 'coach';   // modes with no pulse sensing
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
 const pulseCanvas = document.createElement('canvas');
 pulseCanvas.width = 48; pulseCanvas.height = 48;
@@ -109,7 +112,7 @@ function loadDetector() {
 async function startCamera() {
   stopCamera();
   pulse?.reset();
-  if(mode() !== 'respiration') facing = mode() === 'finger' ? 'environment' : 'user';
+  if(!chestOnly()) facing = mode() === 'finger' ? 'environment' : 'user';
   source = mode() === 'dual' ? nativeView : video;
   nativeView.hidden = source === video; video.hidden = source !== video;
   if (source === nativeView) {
@@ -230,6 +233,12 @@ function processFrame(t, mediaTime) {
       const dt = t - lastTrackedT < 300 ? (t - lastTrackedT) / 1000 : 1 / 30;
       session.push(dt, flows, CH);
       debugLog?.push({ t, dt, valid: flows.filter(Number.isFinite).length });
+      // Hand the coach each newly judged turn, moved onto the wall clock.
+      if (coach) for (const u of session.turns) {
+        if (u.t <= coachLastTurn) continue;
+        coachLastTurn = u.t;
+        coach.userTurn(t / 1000 - (session.displayT - u.t), u.exhale);
+      }
       lastTrackedT = t;
     }
     [prevGray, curGray] = [curGray, prevGray];
@@ -297,6 +306,7 @@ function drawOverlay(faceOk) {
   octx.clearRect(0, 0, sw, sh);
   const live = running && !paused && faceOk && chest && performance.now() >= motionUntil;
   showPhase(live ? session?.phase() : null, live ? session.turns.length : 0);
+  if (coach && running) { drawLane(sw, sh, live); return; }
   if (!faceOk || !face) return;
 
   octx.strokeStyle = 'rgba(255,255,255,0.95)';
@@ -323,11 +333,29 @@ function drawOverlay(faceOk) {
   // boxes, filling the chest box, or small in the upper chest. Always on
   // screen and clear of the Pause/Stop buttons.
   const layout = $('lineSelect').value;
-  const top = Math.max(layout === 'span' ? fr.y : cr.y, 0);
+  // The face box follows every small head movement; the line's frame must not.
+  // Take the face position once per chest box, which only moves when you do.
+  if (lineAnchor.chest !== chest) lineAnchor = { chest, faceTop: fr.y };
+  const top = Math.max(layout === 'span' ? lineAnchor.faceTop : cr.y, 0);
   let floor = Math.min(cr.y + cr.h, sh - $('controls').offsetHeight);
   if (floor - top < 48) floor = Math.min(cr.y + cr.h, sh);
   const mid = top + (floor - top) * (layout === 'compact' ? 0.4 : 0.5);
   const amp = (floor - top) * (layout === 'compact' ? 0.2 : 0.44);
+  // Fixed axis: the resting level, with the top and bottom of the scale marked.
+  octx.save();
+  octx.strokeStyle = 'rgba(255,255,255,0.75)';
+  octx.lineWidth = 1;
+  octx.beginPath();
+  octx.moveTo(cr.x + pad, mid); octx.lineTo(cr.x + cr.w - pad, mid);
+  octx.moveTo(cr.x + pad, mid - amp); octx.lineTo(cr.x + pad, mid + amp);
+  for (const k of [-1, -0.5, 0.5, 1]) { octx.moveTo(cr.x + pad, mid + k * amp); octx.lineTo(cr.x + pad + (Math.abs(k) === 1 ? 10 : 6), mid + k * amp); }
+  octx.stroke();
+  octx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+  octx.fillStyle = 'rgba(255,255,255,0.9)';
+  octx.shadowColor = 'rgba(0,0,0,0.6)'; octx.shadowBlur = 3;
+  octx.fillText('in', cr.x + pad + 14, mid - amp + 4);
+  octx.fillText('out', cr.x + pad + 14, mid + amp + 4);
+  octx.restore();
   octx.beginPath();
   wave.forEach((v, i) => {
     const x = cr.x + pad + ((i + n - wave.length) / (n - 1)) * (cr.w - 2 * pad);
@@ -361,12 +389,77 @@ function drawOverlay(faceOk) {
     octx.fillStyle = '#fff';
     octx.shadowColor = 'rgba(0,0,0,0.6)';
     octx.shadowBlur = 4;
-    octx.fillText(phase === 'in' ? '↑ Breathing in' : '↓ Breathing out', cr.x + 10, floor - 12);
+    octx.textAlign = 'right';
+    octx.fillText(phase === 'in' ? '↑ Breathing in' : '↓ Breathing out', cr.x + cr.w - 10, floor - 12);
+    octx.textAlign = 'left';
     octx.shadowBlur = 0;
   }
 
   const last = wave[wave.length - 1];
   ringLevel = Math.max(0, Math.min(1, 0.5 + last / (2 * waveScale)));
+}
+
+let lineAnchor = { chest: null, faceTop: 0 };
+
+// Coach view: the guide scrolls right to left toward a "now" line; your own
+// breath is the white trace and dot. Drawn over the dimmed camera picture.
+const COACH_NOTE = {
+  drop: 'One long breath out.',
+  find: 'Finding your rhythm…',
+  match: 'With you.',
+  arrive: 'This is the pace. Stay as long as you like.',
+};
+function drawLane(sw, sh, tracking) {
+  const now = performance.now() / 1000;
+  const top = 44, floor = sh - $('controls').offsetHeight - 14;
+  const nowX = sw * 0.36, pps = sw / 11;
+  const y = (v) => floor - v * (floor - top);
+  octx.setLineDash([]);
+  octx.lineJoin = 'round'; octx.lineCap = 'round';
+  // Fixed axis: empty, half and full, and the now line.
+  octx.strokeStyle = 'rgba(255,255,255,0.28)'; octx.lineWidth = 1;
+  octx.beginPath();
+  for (const v of [0, 0.5, 1]) { octx.moveTo(0, y(v)); octx.lineTo(sw, y(v)); }
+  octx.moveTo(nowX, top - 8); octx.lineTo(nowX, floor + 8);
+  octx.stroke();
+  octx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+  octx.fillStyle = 'rgba(255,255,255,0.6)';
+  octx.fillText('in', 8, y(1) + 14); octx.fillText('out', 8, y(0) - 6);
+
+  octx.beginPath();
+  for (let s = -4; s <= 7.001; s += 0.05) {
+    const x = nowX + s * pps, gy = y(coach.level(now + s));
+    s === -4 ? octx.moveTo(x, gy) : octx.lineTo(x, gy);
+  }
+  octx.strokeStyle = '#8ab4f8'; octx.lineWidth = 4; octx.stroke();
+
+  let dotY = null;
+  const wave = tracking ? session?.recentWaveform(4) : null;
+  if (wave && wave.length >= 20) {
+    let peak = 0;
+    for (const v of session.recentWaveform(12)) peak = Math.max(peak, Math.abs(v));
+    waveScale = Math.max(peak, waveScale * 0.995, 1e-3);
+    const lv = (v) => Math.max(0, Math.min(1, 0.5 + v / (2 * waveScale)));
+    octx.beginPath();
+    wave.forEach((v, i) => {
+      const x = nowX - ((wave.length - 1 - i) / 10) * pps;
+      i ? octx.lineTo(x, y(lv(v))) : octx.moveTo(x, y(lv(v)));
+    });
+    octx.strokeStyle = '#fff'; octx.lineWidth = 2.5; octx.stroke();
+    dotY = y(lv(wave[wave.length - 1]));
+    ringLevel = lv(wave[wave.length - 1]);
+  }
+  octx.beginPath();
+  octx.arc(nowX, dotY ?? y(coach.level(now)), 8, 0, 2 * Math.PI);
+  octx.fillStyle = dotY === null ? '#8ab4f8' : '#fff';
+  octx.fill();
+
+  const note = coach.stage === 'lead'
+    ? (coach.holding ? 'Holding here until you are with it.' : coach.sensed ? 'Slowing down together.' : 'Slowing down. Follow the line.')
+    : COACH_NOTE[coach.stage];
+  octx.font = '500 15px -apple-system, BlinkMacSystemFont, sans-serif';
+  octx.fillStyle = '#fff';
+  octx.fillText(tracking || coach.stage === 'drop' ? note : `${note}  (not tracking you yet)`, 12, 26);
 }
 
 // ---------- UI state ----------
@@ -429,6 +522,16 @@ function updateUi(t, faceOk) {
   const rate = steady && t - steadySince >= RECOVER_MS ? session.currentRate() : null;
   $('ringUnit').textContent='breaths/min';
   $('bpm').textContent = rate ? Math.round(rate.bpm) : '--';
+  if (coach) {
+    const now = t / 1000, mine = rate?.bpm ?? (steady ? coach.userRate(now) : null);
+    $('bpm').textContent = mine ? Math.round(mine) : '--';
+    $('ringUnit').textContent = 'you /min';
+    $('coachPace').textContent = coach.bpm.toFixed(1);
+    $('coachSync').textContent = coach.sensed && coach.sync !== null ? `${Math.round(coach.sync * 100)}%` : '--';
+    $('coachTime').textContent = fmtDuration(now - coach.t0);
+    setStatus(paused ? 'Paused. Tap Resume.' : coach.stage === 'drop' ? 'Let it all out…' : coach.inhaling(now) ? 'Breathe in' : 'Breathe out');
+    return;
+  }
   if(pulse)renderLiveRates(document,!paused?pulse.result?.hr:null,rate?.bpm);
   $('elapsed').textContent = fmtDuration(session.activeS);
   $('breaths').textContent = session.breaths.length;
@@ -449,6 +552,7 @@ function updateUi(t, faceOk) {
 
 // Paced-breathing guide: inhale for 40% of each cycle, exhale for 60%.
 function guidePhase() {
+  if (running && coach) { const now = performance.now() / 1000; return { inhale: coach.inhaling(now), level: coach.level(now) }; }
   if (!running || !session?.paceBpm) return null;
   const cycle = (((performance.now() - guideStart) / 1000) * session.paceBpm / 60) % 1;
   return cycle < 0.4 ? { inhale: true, level: cycle / 0.4 } : { inhale: false, level: 1 - (cycle - 0.4) / 0.6 };
@@ -473,6 +577,7 @@ function cue(inhale) {
 // Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
   if (running && !paused) {
+    coach?.update(performance.now() / 1000);
     const guide = guidePhase();
     if (guide && guide.inhale !== lastGuideInhale) { cue(guide.inhale); lastGuideInhale = guide.inhale; }
     const level = guide?.level ?? ringLevel;
@@ -483,7 +588,7 @@ function cue(inhale) {
 
 function setControls() {
   $('modeSelect').disabled = running;
-  $('flipBtn').disabled = running || mode() !== 'respiration';
+  $('flipBtn').disabled = running || !chestOnly();
   $('startBtn').hidden = running;
   $('pauseBtn').hidden = !running;
   $('stopBtn').hidden = !running;
@@ -505,13 +610,14 @@ async function start() {
     setStatus(cameraErrorText(err));
     return;
   }
-  pulse = mode() === 'respiration' ? null : new PulseSession(mode() === 'remote');
-  const pace = Number($('paceSelect').value) || null;
+  pulse = chestOnly() ? null : new PulseSession(mode() === 'remote');
+  const pace = mode() === 'coach' ? null : Number($('paceSelect').value) || null;
+  coach = mode() === 'coach' ? new Coach(performance.now() / 1000) : null; coachLastTurn = -Infinity;
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = performance.now();
   steadySince = null; lastGuideInhale = null;
-  if (pace && $('soundToggle').checked) {
+  if ((pace || coach) && $('soundToggle').checked) {
     try { audioCtx ??= new AudioContext(); audioCtx.resume(); } catch { audioCtx = null; }
   }
   clipBlob = null;
@@ -534,6 +640,13 @@ function stop() {
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
   showSummary(summary);
+  if (coach) {
+    $('sumPace').hidden = false;
+    $('sumPace').textContent = coach.firstBpm
+      ? `Coach: it caught you at about ${coach.firstBpm.toFixed(1)}/min and the guide finished at ${coach.bpm.toFixed(1)}/min.`
+      : `Coach: it could not track your breathing, so it guided on a schedule down to ${coach.bpm.toFixed(1)}/min.`;
+    coach = null;
+  }
   $('ringFill').style.strokeDashoffset = RING_LEN;
   setStatus('Prop your phone up or hold it steady with your face and upper chest in view, then tap Start.');
 }
@@ -731,11 +844,18 @@ $('flipBtn').onclick = async () => {
 loadDetector().catch(() => {}); // warm up while the user gets positioned
 
 // Test hook for automated end-to-end checks.
-window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
+window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',mode()==='coach');$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=!chestOnly();if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':mode()==='coach'?'Face and chest in view, then tap Start. It opens with one long breath out, finds your rhythm, and slows it down with you.':'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
 function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pulse.hr.map(x=>({t:x.t,bpm:x.v})):pulse.rr.map(x=>({t:x.t,bpm:60000/x.v}))):[]);}
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
+
+// ?coach opens straight into the coach and starts it: for a home-screen icon or a Shortcut.
+if (new URLSearchParams(location.search).has('coach')) {
+  $('modeSelect').value = 'coach';
+  $('modeSelect').onchange();
+  start();
+}

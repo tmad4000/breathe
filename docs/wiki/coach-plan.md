@@ -1,6 +1,16 @@
-# Adaptive coach (proposal, 2026-11-13)
+# Adaptive coach
 
-Not built. Design page with live mockups: https://claude.ai/artifact/V4dCRjGHunWdmw7Sf1enWD
+**Built in v0.6.0 (2026-11-13):** engine (`coach.js`) and Lane view, resonance
+destination only. Changed from the proposal below at Jacob's direction ("catch
+you faster and drop you in; the point is to break out of scrolling"): no silent
+Listen stage. It opens with one long breath out, catches the pace from the first
+two agreeing breaths, and steps every breath while in step. `?coach` starts it
+on load. Still to do: other destinations and holds, end summary, fingertip
+variant, Rings view. Not yet tried on a real phone.
+
+## Original proposal
+
+Not built at the time of writing. Design page with live mockups: https://claude.ai/artifact/V4dCRjGHunWdmw7Sf1enWD
 (private to Jacob's account).
 
 **Idea:** the guide starts at the breath the person already has and leads from
