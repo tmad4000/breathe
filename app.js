@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -319,11 +319,15 @@ function drawOverlay(faceOk) {
   const pad = cr.w * 0.06;
   // Draw the breath line in the part of the chest box that is on screen and
   // clear of the Pause/Stop buttons, a little above its middle.
-  const top = Math.max(cr.y, 0);
+  // Where the breath line is drawn (Settings → Breath line): across both
+  // boxes, filling the chest box, or small in the upper chest. Always on
+  // screen and clear of the Pause/Stop buttons.
+  const layout = $('lineSelect').value;
+  const top = Math.max(layout === 'span' ? fr.y : cr.y, 0);
   let floor = Math.min(cr.y + cr.h, sh - $('controls').offsetHeight);
   if (floor - top < 48) floor = Math.min(cr.y + cr.h, sh);
-  const mid = top + (floor - top) * 0.4;
-  const amp = Math.min(cr.h * 0.33, (floor - top) * 0.34);
+  const mid = top + (floor - top) * (layout === 'compact' ? 0.4 : 0.5);
+  const amp = (floor - top) * (layout === 'compact' ? 0.2 : 0.44);
   octx.beginPath();
   wave.forEach((v, i) => {
     const x = cr.x + pad + ((i + n - wave.length) / (n - 1)) * (cr.w - 2 * pad);
@@ -715,6 +719,8 @@ $('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
 $('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
 $('soundToggle').checked = localStorage.getItem('breathe.sound') !== 'off';
 $('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.target.checked ? 'on' : 'off');
+$('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
+$('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
 $('recordToggle').onchange = (e) => localStorage.setItem('breathe.record', e.target.checked ? 'on' : 'off');
 $('flipBtn').onclick = async () => {
