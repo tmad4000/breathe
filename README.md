@@ -53,6 +53,13 @@ the blue guide scrolls toward a "now" line and your breath is the white trace
 and dot, over a dimmed camera picture. The logic is `coach.js` (pure, tested in
 `test/coach.test.mjs` against simulated people). Thresholds are first guesses.
 
+**v0.8.0, coach patterns and full-height targets:** Settings → Coach pattern
+chooses the destination: 5 in · hold 1 · 5 out · hold 1 (default), 5 in · 5 out,
+or 4-7-8. At your own pace there are no holds; they grow to full length as the
+pace comes down. Every guided breath goes completely full and completely empty:
+the line ahead starts at your ball but always runs to the full top or bottom
+line, and the guide never turns back part-way, even while catching you.
+
 **v0.7.0:** Coach is the default mode (the app reopens in the mode used last).
 Its default view is **Path**, after the breathing videos with a thick line of
 up and down stages, a ball and a big word: the ball is your own breath, and the
