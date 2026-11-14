@@ -252,6 +252,7 @@ function processFrame(t, mediaTime) {
         if (u.t <= coachLastTurn) continue;
         coachLastTurn = u.t;
         coach.userTurn(t / 1000 - (session.displayT - u.t), u.exhale);
+        if ($('ownSoundToggle').checked) tick(u.exhale);
       }
       lastTrackedT = t;
     }
@@ -438,7 +439,10 @@ function drawLane() {
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, sw, sh);
   const now = performance.now() / 1000;
-  const top = 84, floor = sh - $('controls').offsetHeight - 14;
+  // With tracking on, a small camera tile sits top-right; the lane starts below it.
+  const tile = tracking && $('camTileToggle').checked && !video.hidden && video.offsetWidth
+    ? { x: video.offsetLeft, y: video.offsetTop, w: video.offsetWidth, h: video.offsetHeight } : null;
+  const top = tile ? Math.max(84, tile.y + tile.h + 40) : 84, floor = sh - $('controls').offsetHeight - 14;
   const nowX = sw * 0.36, pps = Math.min(sw / 11, 90);
   const ahead = (sw - nowX) / pps, behind = nowX / pps;
   const y = (v) => floor - v * (floor - top);
@@ -491,9 +495,18 @@ function drawLane() {
   if (you !== null) {
     octx.beginPath(); octx.arc(nowX, y(you), 17, 0, 2 * Math.PI);
     octx.strokeStyle = '#fff'; octx.lineWidth = 3; octx.stroke();
-    octx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
-    octx.fillStyle = 'rgba(255,255,255,0.85)'; octx.textAlign = 'right';
-    octx.fillText('you', nowX - 24, y(you) + 4); octx.textAlign = 'left';
+    // Which way your own breath is going, right at the ring: an arrow and a word.
+    const dir = session.phase();
+    octx.font = '700 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    octx.fillStyle = '#fff'; octx.textAlign = 'right';
+    octx.shadowColor = 'rgba(0,0,0,0.7)'; octx.shadowBlur = 4;
+    octx.fillText(dir === 'in' ? 'you ↑ in' : dir === 'out' ? 'you ↓ out' : 'you', nowX - 26, y(you) + 5);
+    octx.shadowBlur = 0; octx.textAlign = 'left';
+    if (dir) {
+      const up = dir === 'in', ay = y(you) + (up ? -24 : 24);
+      octx.beginPath(); octx.moveTo(nowX, ay + (up ? -9 : 9)); octx.lineTo(nowX - 8, ay); octx.lineTo(nowX + 8, ay); octx.closePath();
+      octx.fillStyle = '#fff'; octx.fill();
+    }
   }
 
   const seg = coach.seg(now), left = Math.ceil(seg.t1 - now);
@@ -515,7 +528,6 @@ function drawLane() {
     : coach.stage === 'lead' ? (coach.holding ? 'Waiting here until you are with it.' : 'Same pattern, a little longer each breath.')
     : COACH_NOTE[coach.stage];
   if (coachNote) note = coachNote;
-  else if (coach.adaptive && tracking && !seesYou && coach.stage !== 'drop') note = 'Camera is on but cannot see you: face and chest in view.';
   octx.font = '500 15px -apple-system, BlinkMacSystemFont, sans-serif';
   octx.fillStyle = '#fff';
   octx.fillText(note, 16, 28);
@@ -525,9 +537,39 @@ function drawLane() {
   const bits = [fmtDuration(now - coach.t0), coach.adaptive && coach.stage !== 'arrive' ? `${shape}  →  ${coach.pattern.filter((x, i) => i % 2 === 0 || x > 0).join(' · ')}` : shape];
   if (!coach.adaptive) bits.push(`${coach.breathCount} breaths`);
   else if (tracking && coach.sensed && coach.sync !== null) bits.push(`in step ${Math.round(coach.sync * 100)}%`);
+  if (you !== null && session.phase()) bits.push(session.phase() === 'in' ? 'you: in ↑' : 'you: out ↓');
   octx.font = '500 13px -apple-system, BlinkMacSystemFont, sans-serif';
   octx.fillStyle = 'rgba(255,255,255,0.62)';
   octx.fillText(bits.join('     '), 16, 50);
+
+  // Is the camera seeing what it needs? Boxes on the tile, and a plain answer under it.
+  if (tracking) {
+    const t = performance.now(), faceOk = t - faceSeenAt < FACE_LOST_MS;
+    const state = !faceOk ? ['Looking for you', false]
+      : chestHidden || !chest ? ['Move back: chest not in view', false]
+      : t < motionUntil ? ['Hold still', false] : ['Face and chest in view', true];
+    const tone = state[1] ? '#34c759' : '#ffcc00';
+    let labelX = sw - 12, labelY = 62;
+    if (tile) {
+      octx.save();
+      octx.beginPath(); octx.roundRect(tile.x, tile.y, tile.w, tile.h, 12); octx.clip();
+      const k = Math.max(tile.w / PW, tile.h / PH), ox = tile.x + (tile.w - PW * k) / 2, oy = tile.y + (tile.h - PH * k) / 2;
+      const box = (b) => { const x = ox + b.x * k, w = b.w * k; octx.strokeRect(mirrored ? 2 * tile.x + tile.w - x - w : x, oy + b.y * k, w, b.h * k); };
+      octx.strokeStyle = '#fff'; octx.lineWidth = 1.5; octx.setLineDash([3, 3]);
+      if (faceOk && face) box({ x: face.x - face.w * 0.08, y: face.y - face.h * 0.35, w: face.w * 1.16, h: face.h * 1.55 });
+      if (faceOk && chest) box(chest);
+      octx.restore();
+      octx.setLineDash([]);
+      octx.beginPath(); octx.roundRect(tile.x, tile.y, tile.w, tile.h, 12);
+      octx.strokeStyle = tone; octx.lineWidth = 2.5; octx.stroke();
+      labelY = tile.y + tile.h + 18;
+    }
+    octx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+    octx.textAlign = 'right'; octx.fillStyle = tone;
+    octx.shadowColor = 'rgba(0,0,0,0.7)'; octx.shadowBlur = 4;
+    octx.fillText(`${state[1] ? '●' : '▲'} ${state[0]}`, labelX, labelY);
+    octx.shadowBlur = 0; octx.textAlign = 'left';
+  }
 }
 
 // Start screen for Guide and Coach: the pattern, a way to change it, one line
@@ -694,6 +736,21 @@ function cue(inhale) {
   osc.stop(now + 1);
 }
 
+// A short, dry tick for your own breath turning (optional), unlike the guide's
+// soft tones so the two cannot be confused: higher when you start to breathe in.
+function tick(exhale) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(exhale ? 660 : 990, now);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.09, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 0.1);
+}
+
 // Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
   if (running && !paused) {
@@ -717,6 +774,8 @@ function setControls() {
   $('trackBtn').hidden = !(running && mode() === 'coach');
   $('trackBtn').textContent = tracking ? 'Tracking on' : 'Tracking off';
   $('trackBtn').setAttribute('aria-pressed', String(tracking));
+  document.body.classList.toggle('tracking', tracking);
+  document.body.classList.toggle('no-tile', !$('camTileToggle').checked);
   renderIntro();
   $('startBtn').hidden = running;
   $('pauseBtn').hidden = !running;
@@ -756,7 +815,7 @@ async function start() {
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = performance.now();
   steadySince = null; lastGuideInhale = null;
-  if ((pace || coach) && $('soundToggle').checked) {
+  if (((pace || coach) && $('soundToggle').checked) || (coach && $('ownSoundToggle').checked)) {
     try { audioCtx ??= new AudioContext(); audioCtx.resume(); } catch { audioCtx = null; }
   }
   clipBlob = null;
@@ -997,6 +1056,10 @@ $('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
 $('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
 $('soundToggle').checked = localStorage.getItem('breathe.sound') !== 'off';
 $('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.target.checked ? 'on' : 'off');
+$('camTileToggle').checked = localStorage.getItem('breathe.camTile') !== 'off';
+$('camTileToggle').onchange = (e) => { localStorage.setItem('breathe.camTile', e.target.checked ? 'on' : 'off'); setControls(); };
+$('ownSoundToggle').checked = localStorage.getItem('breathe.ownSound') === 'on';
+$('ownSoundToggle').onchange = (e) => localStorage.setItem('breathe.ownSound', e.target.checked ? 'on' : 'off');
 $('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
 $('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
 $('patternSelect').value = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';

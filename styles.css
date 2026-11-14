@@ -177,3 +177,11 @@ body.coach #modeSelect { background: #1c1c1e; color: #fff; border-color: rgba(25
 .gi-pattern { font-size: clamp(44px, 9vw, 76px); font-weight: 700; letter-spacing: -0.02em; line-height: 1; font-variant-numeric: tabular-nums; }
 .gi-words { font-size: 16px; color: rgba(255,255,255,0.7); letter-spacing: 0.02em; }
 .gi-line { max-width: 440px; margin: 10px 0 0; font-size: 15px; line-height: 1.5; color: rgba(255,255,255,0.62); }
+
+/* Coach with tracking on: the camera is a small tile, top right, not a dim backdrop. */
+body.coach.running.tracking .stage video {
+  inset: auto; top: 52px; right: 12px; left: auto; bottom: auto; width: 108px; height: 144px;
+  object-fit: cover; border-radius: 12px; filter: none;
+}
+body.coach.running.tracking .stage.contain video { width: 176px; height: 99px; }
+body.coach.running.tracking.no-tile .stage video { visibility: hidden; }
