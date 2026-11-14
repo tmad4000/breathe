@@ -66,6 +66,12 @@
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
     <canvas id="overlay"></canvas>
+    <div id="guideIntro" class="guide-intro" hidden>
+      <div class="gi-chips" id="patternChips" role="group" aria-label="Breath pattern"></div>
+      <div class="gi-pattern" id="giPattern"></div>
+      <div class="gi-words" id="giWords"></div>
+      <p class="gi-line" id="giLine"></p>
+    </div>
     <button id="trackBtn" class="track-btn" hidden aria-pressed="true">Tracking on</button>
     <div class="controls" id="controls">
       <button class="btn primary" id="startBtn">Start</button>
@@ -127,6 +133,14 @@
           <option value="path">Path: stages, ball and big words</option>
           <option value="lane">Lane: smooth line</option>
         </select>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="camTileToggle" checked>
+        <span>Coach: show the small camera view with face and chest boxes while tracking</span>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="ownSoundToggle">
+        <span>Coach: also play a short tick when your own breath turns (higher for in, lower for out). The guide keeps its soft tones.</span>
       </label>
       <label class="field">
         <span>Breath line</span>

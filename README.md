@@ -63,6 +63,17 @@ never offer an older version. Releases bump the version in `package.json`,
 `version.json` and `VERSION` in `app.js` together; `npm test` fails if they
 differ.
 
+**v0.10.1, start screen, camera tile, your own in/out:** Guide and Coach are one
+dark screen. Before Start it shows the pattern large, chips to switch pattern, and
+one line about what will happen; the white card is gone in these modes, and on
+wide windows the other modes keep a narrow column. With tracking on, the camera
+is a small tile at the top right with the face and chest boxes and a plain
+status under it ("Face and chest in view", "Move back: chest not in view",
+"Looking for you", "Hold still"); Settings can hide the tile, the status stays.
+Your ring says which way your own breath is going ("you ↑ in"). Settings also
+has an optional short tick for your own breath turning, distinct from the
+guide's soft tones.
+
 **v0.10.0, Guide and a redesigned Coach** (this replaces the coach behaviour
 described in the older paragraphs below):
 
