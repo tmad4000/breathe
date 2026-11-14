@@ -1,4 +1,4 @@
-Breathe.xcodeproj/
-Info.plist
 build/
+build-sim/
 DerivedData/
+xcuserdata/

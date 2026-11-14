@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate project
         run: |
-          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-          cd ios && xcodegen generate
+          true # project is committed; regenerate locally with xcodegen after editing project.yml
+          ls ios/Breathe.xcodeproj
       - name: Build (no signing)
         run: |
           cd ios
