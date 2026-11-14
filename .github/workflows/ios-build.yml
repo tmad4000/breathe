@@ -1,0 +1,28 @@
+# Backup build check for the iOS shell on a GitHub-hosted Mac (free for this public repo).
+# It compiles without signing; it does not produce an installable app.
+name: iOS shell build
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios-build.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Build (no signing)
+        run: |
+          cd ios
+          xcodebuild -project Breathe.xcodeproj -scheme Breathe \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO build | tail -20
