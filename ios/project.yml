@@ -23,6 +23,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openinfra.breathratetracker
+        PRODUCT_NAME: Breath Rate Tracker
         DEVELOPMENT_TEAM: JESMXK96LG
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
