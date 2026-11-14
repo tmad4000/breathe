@@ -690,7 +690,7 @@ async function start() {
         return;
       }
       // The coach does not need the camera to be useful: carry on as a guide.
-      coachNote = 'Camera unavailable: guiding without tracking.';
+      coachNote = 'No camera: guide only.';
     }
   }
   if (guided()) video.hidden = !tracking;
@@ -1000,14 +1000,14 @@ $('trackBtn').onclick = async () => {
   const now = performance.now() / 1000;
   if (tracking) {
     tracking = false; stopCamera(); video.hidden = true;
-    coach.setTracking(false, now); coachNote = 'Tracking off: guiding only.';
+    coach.setTracking(false, now); coachNote = 'Tracking off: guide only.';
   } else {
     $('trackBtn').disabled = true;
     try {
       await startCamera(); await loadDetector();
       tracking = true; video.hidden = false; coachNote = ''; coachLastTurn = session.displayT;
       coach.setTracking(true, now);
-    } catch { stopCamera(); coachNote = 'Camera unavailable: guiding without tracking.'; }
+    } catch { stopCamera(); coachNote = 'No camera: guide only.'; }
     $('trackBtn').disabled = false;
   }
   setControls();

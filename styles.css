@@ -149,3 +149,5 @@ body.coach.running #status { font-size: 24px; font-weight: 600; letter-spacing: 
 .coach-log summary { cursor: pointer; padding: 6px 0; }
 .coach-log pre { margin: 6px 0 0; padding: 10px; overflow-x: auto; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--track); border-radius: 8px; color: var(--text); }
 body.coach #coachStats .v { font-size: 16px; }
+body.coach #coachStats { grid-template-columns: 1fr 1.9fr 1fr; }
+body.coach #coachStats .v { white-space: nowrap; }
