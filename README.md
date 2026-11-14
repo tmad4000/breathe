@@ -77,7 +77,7 @@ clips only; real-phone accuracy still needs guided sessions. Background research
 
 Not a medical device.
 
-## Coherence prototype (v0.4.2)
+## Coherence prototype (v0.4.3)
 
 Choose **Coherence · fingertip** for rear-camera contact PPG, HR, pulse-interval RMSSD and a 64-second spectral coherence ratio. Cover the lens gently; the torch is enabled when supported, otherwise use bright light. Choose **Coherence · hands-free** for experimental face POS pulse estimation alongside chest respiration. Its score combines slow HR spectral concentration and segmented breath–heart coherence; it does not report beat-level RMSSD. Neither mode is calibrated to HeartMath devices.
 

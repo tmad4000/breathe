@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.4.2';
+const VERSION = '0.4.3';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -50,6 +50,12 @@ let audioCtx = null, lastGuideInhale = null;
 let recorder = null, clipChunks = [], clipBlob = null;
 
 $('version').textContent = VERSION;
+// The tab title names the open mode, not just the app.
+function setTitle() {
+  const sel = $('modeSelect');
+  document.title = `${sel.options[sel.selectedIndex].text} — Breathe`;
+}
+setTitle();
 
 // ---------- setup ----------
 
@@ -257,10 +263,17 @@ function drawOverlay(faceOk) {
   waveScale = Math.max(peak, waveScale * 0.995, 1e-3);
   const n = 10 * 10;
   const pad = cr.w * 0.06;
+  // Draw the breath line in the part of the chest box that is on screen and
+  // clear of the Pause/Stop buttons, a little above its middle.
+  const top = Math.max(cr.y, 0);
+  let floor = Math.min(cr.y + cr.h, sh - $('controls').offsetHeight);
+  if (floor - top < 48) floor = Math.min(cr.y + cr.h, sh);
+  const mid = top + (floor - top) * 0.4;
+  const amp = Math.min(cr.h * 0.33, (floor - top) * 0.34);
   octx.beginPath();
   wave.forEach((v, i) => {
     const x = cr.x + pad + ((i + n - wave.length) / (n - 1)) * (cr.w - 2 * pad);
-    const y = cr.y + cr.h / 2 - (v / waveScale) * cr.h * 0.33;
+    const y = mid - (v / waveScale) * amp;
     i ? octx.lineTo(x, y) : octx.moveTo(x, y);
   });
   octx.lineWidth = 3;
@@ -276,6 +289,17 @@ function drawOverlay(faceOk) {
 
 // ---------- UI state ----------
 
+// The heart icon beats at the estimated rate, and goes grey and still without one.
+let beatBpm = null;
+function setHeartbeat(hr) {
+  const bpm = Number.isFinite(hr) ? Math.round(hr) : null;
+  if (bpm === beatBpm) return;
+  beatBpm = bpm;
+  const icon = $('heartIcon');
+  icon.classList.toggle('beating', bpm !== null);
+  if (bpm) icon.style.animationDuration = `${(60 / bpm).toFixed(2)}s`;
+}
+
 function setStatus(text) {
   const el = $('status');
   if (el.textContent !== text) el.textContent = text;
@@ -286,6 +310,7 @@ function updateUi(t, faceOk) {
   if(pulse){
     const r=!paused ? pulse.result:null;
     renderLiveRates(document,r?.hr,null);
+    setHeartbeat(r?.hr);
     $('rmssd').textContent=r?.rmssd?.toFixed(0)??'--';
     const co=r?.coherence;
     $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
@@ -402,7 +427,7 @@ function stop() {
   releaseWakeLock();
   stopClip();
   stopCamera();
-  if(pulse){pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(pulse){pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;setHeartbeat(null);$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   if (summary.durationS >= 10) saveSession(summary);
   lastLive = summary;
@@ -579,7 +604,7 @@ function renderHistory() {
 
 $('startBtn').onclick = start;
 $('stopBtn').onclick = stop;
-$('pauseBtn').onclick = () => { paused = !paused; pulse?.reset(); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls(); };
+$('pauseBtn').onclick = () => { paused = !paused; pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls(); };
 $('doneBtn').onclick = () => { $('summarySheet').hidden = true; };
 $('exportBtn').onclick = exportCsv;
 $('historyBtn').onclick = () => { renderHistory(); $('historySheet').hidden = false; };
@@ -604,7 +629,7 @@ loadDetector().catch(() => {}); // warm up while the user gets positioned
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 

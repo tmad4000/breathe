@@ -39,7 +39,12 @@
     </div>
   </section>
 
-  <section id="pulsePanel" hidden><p id="pulseQuality">Waiting for camera</p><div class="pulseMetrics"><span id="breathMetric" hidden>Breathing <strong id="breathRate">--</strong> /min</span><span>Heart rate <strong id="heartRate">--</strong> bpm</span><span>RMSSD <strong id="rmssd">--</strong> ms</span><span>Coherence <strong id="coherence">--</strong></span></div><canvas id="heartChart" aria-label="Heart rate tachogram"></canvas><p class="muted">Experimental camera estimate · not a medical device. HR and breathing appear as each signal becomes usable; coherence needs a 64-second window. Settings → breathing guide (6/min recommended). Stop if the phone feels hot.</p></section>
+  <section id="pulsePanel" hidden><p id="pulseQuality">Waiting for camera</p><div class="pulseMetrics">
+      <div class="metric hr"><span class="k"><svg id="heartIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.2 2.9 4.5 6.6 4.5c2 0 3.6 1 5.4 3 1.8-2 3.4-3 5.4-3 3.7 0 5.7 3.7 4.2 7.2C19.5 16.4 12 21 12 21z"/></svg>Heart rate · est.</span><span class="v"><strong id="heartRate">--</strong><small>bpm</small></span></div>
+      <div class="metric" id="breathMetric" hidden><span class="k">Breathing</span><span class="v"><strong id="breathRate">--</strong><small>/min</small></span></div>
+      <div class="metric" id="rmssdMetric"><span class="k">RMSSD</span><span class="v"><strong id="rmssd">--</strong><small>ms</small></span></div>
+      <div class="metric"><span class="k">Coherence</span><span class="v"><strong id="coherence">--</strong></span></div>
+    </div><canvas id="heartChart" aria-label="Heart rate tachogram"></canvas><p class="muted">Experimental camera estimate · not a medical device. HR and breathing appear as each signal becomes usable; coherence needs a 64-second window. Settings → breathing guide (6/min recommended). Stop if the phone feels hot.</p></section>
   <section class="stats">
     <div><span class="k">Time</span><span class="v" id="elapsed">0:00</span></div>
     <div><span class="k">Breaths</span><span class="v" id="breaths">0</span></div>
@@ -49,7 +54,7 @@
   <main class="stage" id="stage">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="overlay"></canvas>
-    <div class="controls">
+    <div class="controls" id="controls">
       <button class="btn primary" id="startBtn">Start</button>
       <button class="btn secondary" id="pauseBtn" hidden>Pause</button>
       <button class="btn danger" id="stopBtn" hidden>Stop</button>
