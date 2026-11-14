@@ -26,6 +26,7 @@ try {
   if (shots) await page.screenshot({ path: `${shots}/guide-phone.png` });
   await page.waitForTimeout(7000);
   await page.click('#stopBtn');
+  await page.click('#stDetails');
   assert.match(await page.locator('#sumPace').textContent(), /^Guide: 5-1-5-1/);
   assert.match(await page.locator('#coachLog').textContent(), /start/);
   assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('breathe.sessions.v1'))[0].coach.mode === 'guide'));
@@ -46,6 +47,7 @@ try {
   assert.equal(await page.locator('#trackBtn').textContent(), 'Tracking off');
   if (shots) await page.screenshot({ path: `${shots}/coach-no-camera.png` });
   await page.click('#stopBtn');
+  await page.click('#stDetails');
   assert.match(await page.locator('#sumPace').textContent(), /^Coach without tracking/);
   await page.close();
 
@@ -68,6 +70,7 @@ try {
   const log = await page.evaluate(() => window.__breathe.coach.log.map((e) => e.ev));
   assert.ok(log.includes('catch') && log.includes('tracking-off'), log.join(','));
   await page.click('#stopBtn');
+  await page.click('#stDetails');
   assert.match(await page.locator('#coachLog').textContent(), /caught your pace/);
   assert.deepEqual(errors, []);
   console.log('PASS: guide without camera, coach without camera, catch and tracking-off, session log');

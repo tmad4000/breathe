@@ -31,9 +31,9 @@ try {
   assert.equal(await page.getAttribute('#historyBtn', 'aria-label'), 'Settings and history');
   assert.match(await page.title(), /^Coach — Breathe$/);
   const box = async (sel) => page.locator(sel).boundingBox();
-  const sel = await box('#modeSelect'), ver = await box('#topVersion'), flip = await box('#flipBtn');
+  const sel = await box('#modeSelect'), ver = await box('#topVersion'), flip = await box('#soundBtn');
   assert.ok(ver.x + ver.width <= sel.x, 'version text clear of the mode selector');
-  assert.ok(sel.x + sel.width <= flip.x, 'mode selector clear of the camera button');
+  assert.ok(sel.x + sel.width <= flip.x, 'mode selector clear of the sound button');
   if (shots) await page.screenshot({ path: `${shots}/phone-normal.png` });
 
   // Sheet: heading and Settings above History.

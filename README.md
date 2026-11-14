@@ -63,6 +63,20 @@ never offer an older version. Releases bump the version in `package.json`,
 `version.json` and `VERSION` in `app.js` together; `npm test` fails if they
 differ.
 
+**v0.11.0, calmer controls:** a speaker button at the top turns all sound on or
+off (also the M key; remembered on this device). Guide could be silent on iPhones:
+iOS mutes Web Audio with the silent switch, so a session now asks for the
+"playback" audio session (iOS 17+, or one silent media play on older iOS) and
+starts the AudioContext inside the Start tap; if the browser still holds sound
+back (e.g. `?guide` opened with no tap) the speaker turns amber and any tap lets
+it play. Stop shows a small "Session saved" card over the stage with Details,
+instead of opening the summary sheet. Sheets have a fixed header with a close
+button and also close with Esc, a tap outside or a swipe down. The camera-switch
+button only appears in Respiration. In Coach the camera keeps one fixed slot top
+right: switching tracking off leaves a quiet "Tracking off" tile there, so the
+lane does not move. The mode menu always shows a chevron, and the pattern chips
+are captioned "Pattern · tap to switch". `node test/ux-e2e.mjs` checks all of this.
+
 **v0.10.1, start screen, camera tile, your own in/out:** Guide and Coach are one
 dark screen. Before Start it shows the pattern large, chips to switch pattern, and
 one line about what will happen; the white card is gone in these modes, and on
@@ -148,6 +162,7 @@ npm test                                         # signal-processing unit tests
 test/make-fixtures.sh path/to/screenshot.png     # synthetic breathing clips (ffmpeg)
 node test/e2e.mjs http://127.0.0.1:8968/ test/fixtures/b15.mp4 15 60
 node test/update-e2e.mjs                         # version text and update notice
+node test/ux-e2e.mjs                             # sound switch, stop card, sheets, fixed coach slot
 ```
 
 Browser tests use the global `playwright` and installed Chrome by default.

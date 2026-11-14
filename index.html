@@ -17,16 +17,22 @@
 <body>
   <header class="topbar">
     <div class="topleft">
-      <button class="icon-btn" id="historyBtn" aria-label="Settings and history">
+      <button class="icon-btn" id="historyBtn" aria-label="Settings and history" title="Settings &amp; history">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z"/></svg>
       </button>
       <span class="app-version" id="topVersion"></span>
       <button class="update-btn" id="updateBtn" hidden>Update<span class="sep"> · </span><span class="what">tap to reload</span></button>
     </div>
-    <label class="title"><span class="mode-word">Mode</span> <select id="modeSelect"><option value="coach">Coach</option><option value="guide">Guide (no camera)</option><option value="respiration">Respiration</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select></label>
-    <button class="icon-btn" id="flipBtn" aria-label="Switch camera">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-5 11.5V14H9v2.5L5.5 13 9 9.5V12h6V9.5l3.5 3.5-3.5 3.5z"/></svg>
-    </button>
+    <label class="title"><span class="mode-word">Mode</span> <span class="select-wrap"><select id="modeSelect" title="Switch mode"><option value="coach">Coach</option><option value="guide">Guide (no camera)</option><option value="respiration">Respiration</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg></span></label>
+    <div class="topright">
+      <button class="icon-btn" id="soundBtn" aria-pressed="true" aria-label="Sound" title="Sound on · press M to mute">
+        <svg class="snd-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+        <svg class="snd-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>
+      </button>
+      <button class="icon-btn" id="flipBtn" aria-label="Switch between front and back camera" title="Switch between front and back camera">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3 7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-3.17L15 3H9zm3 4.5a5.5 5.5 0 0 1 5.2 3.7H19l-2.5 3-2.5-3h1.6A4 4 0 0 0 8.5 10l-1.1-1A5.48 5.48 0 0 1 12 7.5zm-4.5 5 2.5 3H8.4a4 4 0 0 0 7.1 1.5l1.1 1A5.5 5.5 0 0 1 6.8 15.5H5l2.5-3z"/></svg>
+      </button>
+    </div>
   </header>
 
   <section class="card" aria-live="polite">
@@ -66,13 +72,25 @@
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
     <canvas id="overlay"></canvas>
+    <div id="camSlot" class="cam-slot" hidden aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M21 6.5l-4 4V7a1 1 0 0 0-1-1H9.82L21 17.18V6.5zM3.27 2 2 3.27 4.73 6H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/></svg>
+      <span id="camSlotText">Tracking off</span>
+    </div>
     <div id="guideIntro" class="guide-intro" hidden>
-      <div class="gi-chips" id="patternChips" role="group" aria-label="Breath pattern"></div>
+      <span class="gi-caption" id="patternCaption">Pattern · tap to switch</span>
+      <div class="gi-chips" id="patternChips" role="group" aria-labelledby="patternCaption"></div>
       <div class="gi-pattern" id="giPattern"></div>
       <div class="gi-words" id="giWords"></div>
       <p class="gi-line" id="giLine"></p>
     </div>
     <button id="trackBtn" class="track-btn" hidden aria-pressed="true">Tracking on</button>
+    <div class="sum-toast" id="sumToast" role="status" hidden>
+      <div class="st-text"><strong id="stTitle">Session saved</strong><span id="stLine"></span></div>
+      <button type="button" class="st-link" id="stDetails">Details</button>
+      <button type="button" class="st-close" id="stClose" aria-label="Dismiss">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
     <div class="controls" id="controls">
       <button class="btn primary" id="startBtn">Start</button>
       <button class="btn secondary" id="pauseBtn" hidden>Pause</button>
@@ -80,9 +98,9 @@
     </div>
   </main>
 
-  <div class="sheet" id="summarySheet" hidden>
+  <div class="sheet" id="summarySheet" role="dialog" aria-modal="true" aria-labelledby="summaryTitle" hidden>
     <div class="sheet-body">
-      <h2>Session summary</h2>
+      <div class="sheet-head"><span class="grabber" aria-hidden="true"></span><h2 id="summaryTitle">Session summary</h2><button type="button" class="sheet-close" data-close aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
       <p class="muted" id="sumDate"></p>
       <div class="sum-grid">
         <div><span class="k">Average</span><span class="v big" id="sumAvg">--</span><span class="u">breaths/min</span></div>
@@ -96,14 +114,14 @@
       <div class="row">
         <button class="btn secondary" id="clipBtn" hidden>Share clip</button>
         <button class="btn secondary" id="exportBtn">Export CSV</button>
-        <button class="btn primary" id="doneBtn">Done</button>
+        <button class="btn primary" id="doneBtn" data-close>Done</button>
       </div>
     </div>
   </div>
 
-  <div class="sheet" id="historySheet" hidden>
+  <div class="sheet" id="historySheet" role="dialog" aria-modal="true" aria-labelledby="historyTitle" hidden>
     <div class="sheet-body">
-      <h2>Settings &amp; history</h2>
+      <div class="sheet-head"><span class="grabber" aria-hidden="true"></span><h2 id="historyTitle">Settings &amp; history</h2><button type="button" class="sheet-close" data-close aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button></div>
       <h3>Settings</h3>
       <label class="field">
         <span>Breathing guide</span>
@@ -153,7 +171,7 @@
       <p class="muted hint">How big the moving breath line is drawn over the camera view.</p>
       <label class="toggle">
         <input type="checkbox" id="soundToggle" checked>
-        <span>Play a soft tone at each guided breath in (higher) and out (lower). Turn off silent mode to hear it.</span>
+        <span>Sound: a soft tone at each guided breath in (higher) and out (lower). Also on the speaker button at the top, or press M.</span>
       </label>
       <label class="toggle">
         <input type="checkbox" id="recordToggle">
@@ -163,7 +181,7 @@
       <ul id="historyList" class="history"></ul>
       <div class="row">
         <button class="btn secondary" id="clearBtn">Clear history</button>
-        <button class="btn primary" id="closeHistoryBtn">Close</button>
+        <button class="btn primary" id="closeHistoryBtn" data-close>Close</button>
       </div>
       <p class="muted version">Breathe <span id="version"></span> · processing stays on this device</p>
     </div>

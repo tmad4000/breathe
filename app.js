@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.10.1';
+const VERSION = '0.11.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -74,9 +74,12 @@ let recorder = null, clipChunks = [], clipBlob = null;
 $('version').textContent = VERSION + (window.__breatheNativeInfo?.shell ? ` · app ${window.__breatheNativeInfo.shell}` : '');
 $('topVersion').textContent = `v${VERSION}`;
 // The tab title names the open mode, not just the app.
+// While a sheet is open, its name comes first: "Settings & history · Coach — Breathe".
 function setTitle() {
   const sel = $('modeSelect');
-  document.title = `${sel.options[sel.selectedIndex].text} — Breathe`;
+  const sheet = [...document.querySelectorAll('.sheet')].find((el) => !el.hidden);
+  const what = sel.options[sel.selectedIndex].text;
+  document.title = `${sheet ? `${sheet.querySelector('h2').textContent} · ` : ''}${what} — Breathe`;
 }
 if (NATIVE) $('modeSelect').add(new Option('Coherence · two cameras', 'dual'));
 setTitle();
@@ -439,9 +442,13 @@ function drawLane() {
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, sw, sh);
   const now = performance.now() / 1000;
-  // With tracking on, a small camera tile sits top-right; the lane starts below it.
-  const tile = tracking && $('camTileToggle').checked && !video.hidden && video.offsetWidth
-    ? { x: video.offsetLeft, y: video.offsetTop, w: video.offsetWidth, h: video.offsetHeight } : null;
+  // In Coach the camera has a fixed slot top-right (camera picture when tracking,
+  // a quiet "Tracking off" tile otherwise); the lane starts below it either way,
+  // so switching tracking never moves the layout.
+  const slot = $('camSlot');
+  const tile = !slot.hidden && slot.offsetWidth
+    ? { x: slot.offsetLeft, y: slot.offsetTop, w: slot.offsetWidth, h: slot.offsetHeight } : null;
+  const camTile = tracking && tile && !video.hidden ? tile : null;
   const top = tile ? Math.max(84, tile.y + tile.h + 40) : 84, floor = sh - $('controls').offsetHeight - 14;
   const nowX = sw * 0.36, pps = Math.min(sw / 11, 90);
   const ahead = (sw - nowX) / pps, behind = nowX / pps;
@@ -550,7 +557,7 @@ function drawLane() {
       : t < motionUntil ? ['Hold still', false] : ['Face and chest in view', true];
     const tone = state[1] ? '#34c759' : '#ffcc00';
     let labelX = sw - 12, labelY = 62;
-    if (tile) {
+    if (camTile) {
       octx.save();
       octx.beginPath(); octx.roundRect(tile.x, tile.y, tile.w, tile.h, 12); octx.clip();
       const k = Math.max(tile.w / PW, tile.h / PH), ox = tile.x + (tile.w - PW * k) / 2, oy = tile.y + (tile.h - PH * k) / 2;
@@ -723,7 +730,8 @@ function guidePhase() {
 // Soft tone at the start of each guided inhale (higher) and exhale (lower), so
 // the guide can be followed without watching the screen.
 function cue(inhale) {
-  if (!audioCtx || !$('soundToggle').checked) return;
+  if (!soundOn) return;
+  if (audioCtx?.state !== 'running') { soundBlocked(true); return; }
   const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
   osc.type = 'sine';
@@ -739,7 +747,7 @@ function cue(inhale) {
 // A short, dry tick for your own breath turning (optional), unlike the guide's
 // soft tones so the two cannot be confused: higher when you start to breathe in.
 function tick(exhale) {
-  if (!audioCtx) return;
+  if (!soundOn || audioCtx?.state !== 'running') return;
   const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
   osc.type = 'triangle';
@@ -749,6 +757,54 @@ function tick(exhale) {
   gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
   osc.connect(gain).connect(audioCtx.destination);
   osc.start(now); osc.stop(now + 0.1);
+}
+
+// ---------- sound ----------
+// One switch for all sound (speaker button, M, or Settings), remembered on this device.
+// Why Guide could be silent: iOS plays Web Audio in the "ambient" category, which the
+// ring/silent switch mutes, and an AudioContext only starts inside a tap. So the context
+// is created and resumed synchronously inside the tap that starts a session (or any
+// later tap), and the page asks for the "playback" audio session, which plays with the
+// switch on silent (iOS 17+: navigator.audioSession; older iOS: one silent <audio> play).
+let soundOn = true;
+try { soundOn = localStorage.getItem('breathe.sound') !== 'off'; } catch { /* storage blocked: default on */ }
+let htmlAudioUnlocked = false;
+function silentWavUrl() {
+  const n = 800, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 16000, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function ensureAudio() {
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch { /* not supported */ }
+  if (!navigator.audioSession && !htmlAudioUnlocked) {
+    htmlAudioUnlocked = true;
+    try { const a = new Audio(silentWavUrl()); a.setAttribute('x-webkit-airplay', 'deny'); a.play().catch(() => {}); } catch { /* no media element audio */ }
+  }
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') audioCtx.resume().then(() => soundBlocked(false), () => {});
+    else soundBlocked(false);
+  } catch { audioCtx = null; }
+}
+// Sound is on but the browser has not let it start yet (e.g. ?guide opened with no tap).
+function soundBlocked(blocked) {
+  const b = $('soundBtn');
+  if (b.classList.contains('blocked') === blocked) return;
+  b.classList.toggle('blocked', blocked);
+  b.title = blocked ? 'Tap to let sound play' : soundOn ? 'Sound on · M to mute' : 'Sound off · M to turn on';
+}
+function setSound(on) {
+  soundOn = on;
+  try { localStorage.setItem('breathe.sound', on ? 'on' : 'off'); } catch { /* not remembered */ }
+  $('soundToggle').checked = on;
+  const b = $('soundBtn');
+  b.setAttribute('aria-pressed', String(on));
+  b.classList.remove('blocked');
+  b.title = on ? 'Sound on · M to mute' : 'Sound off · M to turn on';
+  if (on && running) ensureAudio();
 }
 
 // Ring follows the guide when it is on, otherwise the measured breath.
@@ -770,7 +826,14 @@ function tick(exhale) {
 function setControls() {
   document.body.classList.toggle("running", running);
   $('modeSelect').disabled = running;
-  $('flipBtn').disabled = running || !chestOnly() || mode() === 'guide';
+  // Front/back camera only means something in Respiration; elsewhere the button is gone, not greyed.
+  $('flipBtn').hidden = mode() !== 'respiration';
+  $('flipBtn').disabled = running;
+  // Coach keeps one fixed camera slot while it runs: the picture when tracking, a quiet tile when not.
+  const slot = $('camSlot');
+  slot.hidden = !(running && mode() === 'coach' && $('camTileToggle').checked);
+  slot.classList.toggle('off', !tracking);
+  $('camSlotText').textContent = coachNote.startsWith('No camera') ? 'No camera' : 'Tracking off';
   $('trackBtn').hidden = !(running && mode() === 'coach');
   $('trackBtn').textContent = tracking ? 'Tracking on' : 'Tracking off';
   $('trackBtn').setAttribute('aria-pressed', String(tracking));
@@ -785,6 +848,10 @@ function setControls() {
 
 async function start() {
   $('startBtn').disabled = true;
+  hideToast();
+  // Inside the tap, before any await: browsers only let audio start from a user gesture.
+  const wantsSound = guided() || (mode() !== 'guide' && Number($('paceSelect').value) > 0);
+  if (soundOn && wantsSound) ensureAudio();
   $('modeSelect').disabled = true;
   tracking = false; coachNote = '';
   if (mode() !== 'guide') {
@@ -815,9 +882,7 @@ async function start() {
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = performance.now();
   steadySince = null; lastGuideInhale = null;
-  if (((pace || coach) && $('soundToggle').checked) || (coach && $('ownSoundToggle').checked)) {
-    try { audioCtx ??= new AudioContext(); audioCtx.resume(); } catch { audioCtx = null; }
-  }
+  if (soundOn && (pace || coach)) ensureAudio();
   clipBlob = null;
   if ($('recordToggle').checked) startClip();
   $('startBtn').disabled = false;
@@ -843,15 +908,34 @@ function stop() {
     summary.durationS = Math.max(summary.durationS, guidedS);
     if (!coach.caught) summary.breaths = coach.breathCount;
   }
-  if (summary.durationS >= 10) saveSession(summary);
+  const saved = summary.durationS >= 10;
+  if (saved) saveSession(summary);
   lastLive = summary;
-  showSummary(summary);
+  lastSummary = summary;
+  showToast(summary, saved);
   const wasGuided = !!coach;
   coach = null; tracking = false;
   if (wasGuided) video.hidden = false;
   $('ringFill').style.strokeDashoffset = RING_LEN;
   setStatus(wasGuided ? idleText() : 'Prop your phone up or hold it steady with your face and upper chest in view, then tap Start.');
+  try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch { /* not supported */ }
 }
+
+// After Stop: a small card over the stage with the key results, not a sheet.
+// It never blocks: Start, the mode menu and settings all stay usable, and it
+// fades on its own. "Details" opens the full summary.
+let toastTimer = 0;
+function showToast(s, saved) {
+  const bits = [fmtDuration(s.durationS), `${s.breaths} breath${s.breaths === 1 ? '' : 's'}`];
+  if (s.avgBpm) bits.push(`avg ${s.avgBpm.toFixed(1)}/min`);
+  $('stTitle').textContent = saved ? 'Session saved' : 'Session ended';
+  $('stLine').textContent = bits.join(' · ');
+  $('stDetails').hidden = false;
+  $('sumToast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 30000);
+}
+function hideToast() { clearTimeout(toastTimer); $('sumToast').hidden = true; }
 
 // Optional short recording of the camera so a session can be replayed through
 // ?src= for tuning. Stays on the device unless the user shares it.
@@ -898,6 +982,7 @@ document.addEventListener('visibilitychange', async () => {
   if(document.visibilityState !== 'visible'){pulse?.reset();return;}
   if (!running) return;
   requestWakeLock();
+  if (soundOn && audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
   if (coach && !tracking) return;   // guiding without the camera: nothing to reopen
   // iOS ends the camera track when the app is backgrounded; reopen it.
   if (!stream || stream.getVideoTracks().every((tr) => tr.readyState === 'ended')) {
@@ -936,7 +1021,7 @@ function showSummary(s) {
   $('coachLogBox').hidden = !s.coach;
   $('coachLog').textContent = s.coach ? coachLogText(s.coach) : '';
   $('clipBtn').hidden = !(clipBlob?.size && s === lastLive);
-  $('summarySheet').hidden = false;
+  openSheet('summarySheet');
   requestAnimationFrame(() => drawTrend($('trendChart'), s.trend));
 }
 
@@ -1034,7 +1119,9 @@ function renderHistory() {
     const right = document.createElement('strong');
     right.textContent = s.avgBpm ? `${s.avgBpm.toFixed(1)}/min` : s.coach ? `${s.coach.mode} ${s.coach.pattern}` : '--';
     li.append(left, right);
-    li.onclick = () => { $('historySheet').hidden = true; showSummary(s); };
+    li.tabIndex = 0;
+    li.onclick = () => { closeSheet($('historySheet')); showSummary(s); };
+    li.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.onclick(); } };
     list.append(li);
   }
 }
@@ -1044,18 +1131,72 @@ function renderHistory() {
 $('startBtn').onclick = start;
 $('stopBtn').onclick = stop;
 $('pauseBtn').onclick = () => { paused = !paused; pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls(); };
-$('doneBtn').onclick = () => { $('summarySheet').hidden = true; };
 $('exportBtn').onclick = exportCsv;
-$('historyBtn').onclick = () => { renderHistory(); $('historySheet').hidden = false; };
-$('closeHistoryBtn').onclick = () => { $('historySheet').hidden = true; };
+$('historyBtn').onclick = () => { renderHistory(); openSheet('historySheet'); };
+
+// Sheets (settings, summary): close with the X, Done/Close, Esc, a tap outside,
+// or a swipe down from the top of the sheet. The header stays put while the body scrolls.
+let sheetReturnFocus = null;
+function openSheet(id) {
+  const el = $(id), body = el.querySelector('.sheet-body');
+  if (!el.hidden) return;
+  sheetReturnFocus = document.activeElement;
+  el.hidden = false; body.scrollTop = 0; body.style.transform = '';
+  el.querySelector('.sheet-close').focus({ preventScroll: true });
+  setTitle();
+}
+function closeSheet(el) {
+  if (el.hidden) return;
+  el.hidden = true;
+  el.querySelector('.sheet-body').style.transform = '';
+  setTitle();
+  if (![...document.querySelectorAll('.sheet')].some((x) => !x.hidden)) sheetReturnFocus?.focus?.({ preventScroll: true });
+}
+for (const el of document.querySelectorAll('.sheet')) {
+  const body = el.querySelector('.sheet-body');
+  el.addEventListener('click', (e) => { if (e.target === el) closeSheet(el); });
+  for (const b of el.querySelectorAll('[data-close]')) b.addEventListener('click', () => closeSheet(el));
+  let y0 = null, dy = 0;
+  body.addEventListener('touchstart', (e) => { y0 = body.scrollTop <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
+  body.addEventListener('touchmove', (e) => {
+    if (y0 === null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy > 0) body.style.transform = `translateY(${dy}px)`;
+    else { y0 = null; body.style.transform = ''; }
+  }, { passive: true });
+  body.addEventListener('touchend', () => {
+    if (y0 !== null && dy > 90) closeSheet(el);
+    body.style.transform = ''; y0 = null;
+  });
+}
+$('stDetails').onclick = () => { hideToast(); if (lastSummary) showSummary(lastSummary); };
+$('stClose').onclick = hideToast;
+$('soundBtn').onclick = () => {
+  // On but held back by the browser: this tap is what lets it play, so don't switch it off.
+  if (soundOn && $('soundBtn').classList.contains('blocked')) { ensureAudio(); return; }
+  setSound(!soundOn);
+};
+$('soundToggle').onchange = (e) => setSound(e.target.checked);
+setSound(soundOn);
+// Any tap during a session can unlock sound that was blocked (iOS also suspends it in the background).
+document.addEventListener('pointerdown', () => { if (running && soundOn && audioCtx?.state !== 'running') ensureAudio(); }, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const open = [...document.querySelectorAll('.sheet')].filter((x) => !x.hidden).at(-1);
+    if (open) { e.preventDefault(); closeSheet(open); } else if (!$('sumToast').hidden) hideToast();
+    return;
+  }
+  if ((e.key === 'm' || e.key === 'M') && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.closest?.('input, select, textarea')) {
+    e.preventDefault();
+    setSound(!soundOn);
+  }
+});
 $('clearBtn').onclick = () => {
   if (confirm('Delete all saved sessions on this device?')) { localStorage.removeItem(STORE_KEY); renderHistory(); }
 };
 $('clipBtn').onclick = exportClip;
 $('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
 $('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
-$('soundToggle').checked = localStorage.getItem('breathe.sound') !== 'off';
-$('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.target.checked ? 'on' : 'off');
 $('camTileToggle').checked = localStorage.getItem('breathe.camTile') !== 'off';
 $('camTileToggle').onchange = (e) => { localStorage.setItem('breathe.camTile', e.target.checked ? 'on' : 'off'); setControls(); };
 $('ownSoundToggle').checked = localStorage.getItem('breathe.ownSound') === 'on';
@@ -1097,7 +1238,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, get tracking() { return tracking; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=!chestOnly()||mode()==='guide';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').hidden=mode()!=='respiration';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
@@ -1105,7 +1246,7 @@ function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pul
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
 
 const modeChanged = $('modeSelect').onchange;
-$('modeSelect').onchange = () => { modeChanged(); renderIntro(); };
+$('modeSelect').onchange = () => { modeChanged(); hideToast(); renderIntro(); };
 
 // Open in the mode used last time; the coach by default.
 {
@@ -1119,7 +1260,7 @@ $('trackBtn').onclick = async () => {
   if (!coach || !running) return;
   const now = performance.now() / 1000;
   if (tracking) {
-    tracking = false; stopCamera(); video.hidden = true;
+    tracking = false; stopCamera(); video.hidden = true;   // the slot stays; only its picture goes
     coach.setTracking(false, now); coachNote = 'Tracking off: guide only.';
   } else {
     $('trackBtn').disabled = true;
