@@ -61,9 +61,11 @@ export class Coach {
   }
 
   // Guide level 0 (empty) to 1 (full) at time t, past or planned.
-  level(t) {
+  // straight = true gives straight-line stages (for the path view) instead of eased ones.
+  level(t, straight = false) {
     const s = this.#seg(t);
-    return s.from + (s.to - s.from) * ease((t - s.t0) / (s.t1 - s.t0));
+    const x = (t - s.t0) / (s.t1 - s.t0);
+    return s.from + (s.to - s.from) * (straight ? Math.min(1, Math.max(0, x)) : ease(x));
   }
 
   inhaling(t) { return this.#seg(t).inhale; }

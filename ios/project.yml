@@ -11,7 +11,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Breathe
+        CFBundleDisplayName: Breath Tracker
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         NSCameraUsageDescription: Breathe uses the front camera to follow your breathing and the rear camera to read your pulse from a fingertip. Video stays on this device.
@@ -22,7 +22,7 @@ targets:
         BreatheURL: https://jacobcole.ai/breathe/
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.openinfra.breathe
+        PRODUCT_BUNDLE_IDENTIFIER: com.openinfra.breathratetracker
         DEVELOPMENT_TEAM: JESMXK96LG
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"

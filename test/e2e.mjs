@@ -16,6 +16,7 @@ const page = await browser.newPage({ viewport: { width: 390, height: 844 }, devi
 page.on('console', (m) => m.type() === 'error' && console.log('console error:', m.text()));
 page.on('pageerror', (e) => console.log('page error:', e.message));
 await page.goto(`${url}?src=${encodeURIComponent(video)}`);
+await page.selectOption('#modeSelect', 'respiration');
 await page.click('#startBtn');
 for (let s = 10; s <= Number(seconds); s += 10) {
   await page.waitForTimeout(10000);

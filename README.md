@@ -53,6 +53,14 @@ the blue guide scrolls toward a "now" line and your breath is the white trace
 and dot, over a dimmed camera picture. The logic is `coach.js` (pure, tested in
 `test/coach.test.mjs` against simulated people). Thresholds are first guesses.
 
+**v0.7.0:** Coach is the default mode (the app reopens in the mode used last).
+Its default view is **Path**, after the breathing videos with a thick line of
+up and down stages, a ball and a big word: the ball is your own breath, and the
+line ahead starts at the ball and bends back onto the guide, so it shows where
+to go from where you are. Settings → Coach view switches to the smooth Lane.
+A landscape camera (a laptop) is now shown whole instead of cropped, so the
+face and chest boxes are fully on screen.
+
 **Fixed axis:** the breath line is drawn against a visible resting line and an
 in/out scale that stay put; the frame is taken from the chest box, which only
 moves when you do, not from the face box.
