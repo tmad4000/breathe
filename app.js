@@ -537,7 +537,7 @@ function drawLane() {
   const bits = [fmtDuration(now - coach.t0), coach.adaptive && coach.stage !== 'arrive' ? `${shape}  →  ${coach.pattern.filter((x, i) => i % 2 === 0 || x > 0).join(' · ')}` : shape];
   if (!coach.adaptive) bits.push(`${coach.breathCount} breaths`);
   else if (tracking && coach.sensed && coach.sync !== null) bits.push(`in step ${Math.round(coach.sync * 100)}%`);
-  if (you !== null && session.phase()) bits.push(session.phase() === 'in' ? 'you: in ↑' : 'you: out ↓');
+  if (sw >= 640 && you !== null && session.phase()) bits.push(session.phase() === 'in' ? 'you: in ↑' : 'you: out ↓');
   octx.font = '500 13px -apple-system, BlinkMacSystemFont, sans-serif';
   octx.fillStyle = 'rgba(255,255,255,0.62)';
   octx.fillText(bits.join('     '), 16, 50);
