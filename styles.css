@@ -126,3 +126,16 @@ body.coach .stats:not(#coachStats) { display: none; }
 body.coach .stage video, body.coach #nativeView { filter: brightness(0.28) saturate(0.6); }
 body.coach #status { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
 .stage.contain video, .stage.contain #nativeView { object-fit: contain; }
+
+/* Top-left: settings, the running version, and the update notice when one is available. */
+.topleft { display: flex; align-items: center; flex: none; min-width: 0; }
+.app-version { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.app-version[hidden], .update-btn[hidden] { display: none; }
+.update-btn {
+  border: 1px solid var(--border); background: #fff; color: var(--blue); border-radius: 12px;
+  font-size: 11px; font-weight: 500; line-height: 1.15; padding: 3px 8px; margin-right: 6px; min-height: 32px; text-align: left;
+}
+.update-btn:active { background: var(--track); }
+@media (max-width: 480px) { .update-btn .sep { display: none; } .update-btn .what { display: block; font-weight: 400; } }
+/* On a phone the select already names the mode; the word "Mode" stays for screen readers only, making room for the version. */
+@media (max-width: 480px) { .mode-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }

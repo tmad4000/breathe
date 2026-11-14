@@ -1,10 +1,11 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
+import { isNewerVersion } from './update.js';
 let coach = null, coachLastTurn = -Infinity;
 const chestOnly = () => mode() === 'respiration' || mode() === 'coach';   // modes with no pulse sensing
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -62,6 +63,7 @@ let audioCtx = null, lastGuideInhale = null;
 let recorder = null, clipChunks = [], clipBlob = null;
 
 $('version').textContent = VERSION + (window.__breatheNativeInfo?.shell ? ` · app ${window.__breatheNativeInfo.shell}` : '');
+$('topVersion').textContent = `v${VERSION}`;
 // The tab title names the open mode, not just the app.
 function setTitle() {
   const sel = $('modeSelect');
@@ -880,6 +882,25 @@ $('flipBtn').onclick = async () => {
 };
 
 loadDetector().catch(() => {}); // warm up while the user gets positioned
+
+// Update notice: when the deployed version.json is newer, the version text in the
+// top-left becomes "Update · tap to reload". It never reloads by itself; tapping
+// ends a running session the usual way (saving it) and then reloads.
+async function checkForUpdate() {
+  try {
+    const res = await fetch('version.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { version } = await res.json();
+    const newer = isNewerVersion(version, VERSION);
+    $('updateBtn').hidden = !newer;
+    $('topVersion').hidden = newer;
+    if (newer) $('updateBtn').title = `Version ${version} is available. Tap to reload.`;
+  } catch { /* offline or not deployed: stay quiet */ }
+}
+$('updateBtn').onclick = () => { if (running) stop(); location.reload(); };
+checkForUpdate();
+setInterval(checkForUpdate, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
