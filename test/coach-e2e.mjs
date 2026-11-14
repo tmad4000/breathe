@@ -2,9 +2,9 @@
 // missing camera, tracking can be switched off mid-session, and the session
 // keeps a log. Usage: node test/coach-e2e.mjs [baseUrl] [clip with face and chest] [screenshot dir]
 import assert from 'node:assert/strict';
-import { launchBrowser } from './browser.mjs';
+import { launch } from './browser.mjs';
 const [base = 'http://127.0.0.1:8968/', clip = 'test/fixtures/b12-face.mp4', shots] = process.argv.slice(2);
-const browser = await launchBrowser();
+const browser = await launch();
 const state = (page) => page.evaluate(() => { const c = window.__breathe.coach; return c && { stage: c.stage, cycle: c.cycle, sensed: c.sensed, tracking: window.__breathe.tracking, status: document.getElementById('status').textContent, pattern: document.getElementById('coachPace').textContent, third: document.getElementById('coachSync').textContent, unit: document.getElementById('ringUnit').textContent }; });
 const painted = (page) => page.evaluate(() => { const c = document.getElementById('overlay'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
 try {
