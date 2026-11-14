@@ -1,10 +1,10 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.8.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
-import { Coach } from './coach.js';
+import { Coach, PATTERNS } from './coach.js';
 let coach = null, coachLastTurn = -Infinity;
 const chestOnly = () => mode() === 'respiration' || mode() === 'coach';   // modes with no pulse sensing
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -450,10 +450,18 @@ function drawLane(sw, sh, tracking) {
     ringLevel = you;
   }
 
-  // The guide. Behind the now line it is the plan as it was; ahead, it starts
-  // from where your breath is now and bends back onto the plan.
-  const gap = you === null ? 0 : you - g(now);
-  const ahead = (s) => Math.max(0, Math.min(1, g(now + s) + gap * Math.exp(-s / 1.2)));
+  // The guide. Behind the now line it is the plan as it was. Ahead, it runs
+  // from where your breath is now to the end of the stage in progress, which
+  // is always completely full or completely empty, and then follows the plan.
+  // The targets never shrink: only the way to the next one starts from you.
+  const cur = coach.seg(now);
+  const reach = cur.kind === 'hold' ? Math.min(cur.t1, now + 0.8) : cur.t1;
+  const ahead = (s) => {
+    const t = now + s;
+    if (you === null || t >= reach) return g(t);
+    const x = (t - now) / Math.max(reach - now, 1e-3);
+    return you + (g(reach) - you) * (path ? x : 0.5 - 0.5 * Math.cos(Math.PI * x));
+  };
   const color = path ? '#ff5a3c' : '#8ab4f8';
   octx.strokeStyle = color; octx.lineWidth = path ? 3 : 2; octx.globalAlpha = 0.45;
   octx.beginPath();
@@ -470,7 +478,7 @@ function drawLane(sw, sh, tracking) {
   octx.fillStyle = path ? '#ffe14d' : you === null ? '#8ab4f8' : '#fff';
   octx.fill();
   if (path) {
-    const word = coach.stage === 'drop' ? 'Let it all out' : coach.inhaling(now) ? 'Inhale' : 'Exhale';
+    const word = coach.stage === 'drop' ? 'Let it all out' : { in: 'Inhale', out: 'Exhale', hold: 'Hold' }[coach.phase(now)];
     octx.font = '800 30px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
     octx.fillStyle = '#fff';
     octx.shadowColor = 'rgba(0,0,0,0.7)'; octx.shadowBlur = 6;
@@ -553,7 +561,7 @@ function updateUi(t, faceOk) {
     $('coachPace').textContent = coach.bpm.toFixed(1);
     $('coachSync').textContent = coach.sensed && coach.sync !== null ? `${Math.round(coach.sync * 100)}%` : '--';
     $('coachTime').textContent = fmtDuration(now - coach.t0);
-    setStatus(paused ? 'Paused. Tap Resume.' : coach.stage === 'drop' ? 'Let it all out…' : coach.inhaling(now) ? 'Breathe in' : 'Breathe out');
+    setStatus(paused ? 'Paused. Tap Resume.' : coach.stage === 'drop' ? 'Let it all out…' : { in: 'Breathe in', out: 'Breathe out', hold: 'Hold' }[coach.phase(now)]);
     return;
   }
   if(pulse)renderLiveRates(document,!paused?pulse.result?.hr:null,rate?.bpm);
@@ -576,7 +584,7 @@ function updateUi(t, faceOk) {
 
 // Paced-breathing guide: inhale for 40% of each cycle, exhale for 60%.
 function guidePhase() {
-  if (running && coach) { const now = performance.now() / 1000; return { inhale: coach.inhaling(now), level: coach.level(now) }; }
+  if (running && coach) { const now = performance.now() / 1000; return { inhale: coach.inhaling(now), level: coach.level(now), phase: coach.phase(now) }; }
   if (!running || !session?.paceBpm) return null;
   const cycle = (((performance.now() - guideStart) / 1000) * session.paceBpm / 60) % 1;
   return cycle < 0.4 ? { inhale: true, level: cycle / 0.4 } : { inhale: false, level: 1 - (cycle - 0.4) / 0.6 };
@@ -603,7 +611,9 @@ function cue(inhale) {
   if (running && !paused) {
     coach?.update(performance.now() / 1000);
     const guide = guidePhase();
-    if (guide && guide.inhale !== lastGuideInhale) { cue(guide.inhale); lastGuideInhale = guide.inhale; }
+    // A tone at the start of each breath in and each breath out; holds are silent.
+    const stage = guide ? guide.phase ?? (guide.inhale ? 'in' : 'out') : null;
+    if (guide && stage !== lastGuideInhale) { if (stage !== 'hold') cue(stage === 'in'); lastGuideInhale = stage; }
     const level = guide?.level ?? ringLevel;
     $('ringFill').style.strokeDashoffset = RING_LEN * (1 - level);
   }
@@ -636,7 +646,7 @@ async function start() {
   }
   pulse = chestOnly() ? null : new PulseSession(mode() === 'remote');
   const pace = mode() === 'coach' ? null : Number($('paceSelect').value) || null;
-  coach = mode() === 'coach' ? new Coach(performance.now() / 1000) : null; coachLastTurn = -Infinity;
+  coach = mode() === 'coach' ? new Coach(performance.now() / 1000, { pattern: PATTERNS[$('patternSelect').value] ?? PATTERNS['5-1-5-1'] }) : null; coachLastTurn = -Infinity;
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = performance.now();
@@ -858,6 +868,8 @@ $('soundToggle').checked = localStorage.getItem('breathe.sound') !== 'off';
 $('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.target.checked ? 'on' : 'off');
 $('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
 $('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
+$('patternSelect').value = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
+$('patternSelect').onchange = (e) => localStorage.setItem('breathe.pattern', e.target.value);
 $('coachSelect').value = localStorage.getItem('breathe.coachView') ?? 'path';
 $('coachSelect').onchange = (e) => localStorage.setItem('breathe.coachView', e.target.value);
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
