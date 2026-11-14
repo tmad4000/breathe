@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.10.0';
+const VERSION = '0.10.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -16,7 +16,7 @@ let lastCoachUi = 0;
 const patternLabel = () => { const sel = $('patternSelect'); return sel.options[sel.selectedIndex].text; };
 const idleText = () => mode() === 'guide'
   ? `A paced breath guide, no camera: ${patternLabel()}. Tap Start.`
-  : `Face and chest in view, then tap Start. It starts near your own pace and slows you to ${patternLabel()}. If the camera is not available it still guides.`;
+  : `Coach: starts near your own pace and slows you to ${patternLabel()}. Tap Start.`;
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
 const pulseCanvas = document.createElement('canvas');
 pulseCanvas.width = 48; pulseCanvas.height = 48;
@@ -438,7 +438,7 @@ function drawLane() {
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, sw, sh);
   const now = performance.now() / 1000;
-  const top = 52, floor = sh - $('controls').offsetHeight - 14;
+  const top = 84, floor = sh - $('controls').offsetHeight - 14;
   const nowX = sw * 0.36, pps = Math.min(sw / 11, 90);
   const ahead = (sw - nowX) / pps, behind = nowX / pps;
   const y = (v) => floor - v * (floor - top);
@@ -515,11 +515,64 @@ function drawLane() {
     : coach.stage === 'lead' ? (coach.holding ? 'Waiting here until you are with it.' : 'Same pattern, a little longer each breath.')
     : COACH_NOTE[coach.stage];
   if (coachNote) note = coachNote;
-  else if (coach.adaptive && tracking && !seesYou && coach.stage !== 'drop') note += '  (cannot see you yet)';
+  else if (coach.adaptive && tracking && !seesYou && coach.stage !== 'drop') note = 'Camera is on but cannot see you: face and chest in view.';
   octx.font = '500 15px -apple-system, BlinkMacSystemFont, sans-serif';
   octx.fillStyle = '#fff';
-  octx.fillText(note, 12, 26);
+  octx.fillText(note, 16, 28);
+  // One quiet line of numbers: time, the pattern as it is now, and how you are doing.
+  const d = coach.durations(), one = (x) => String(Math.round(x * 10) / 10);
+  const shape = [d.in, d.top, d.out, d.bottom].filter((x, i) => i % 2 === 0 || x > 0.05).map(one).join(' · ');
+  const bits = [fmtDuration(now - coach.t0), coach.adaptive && coach.stage !== 'arrive' ? `${shape}  →  ${coach.pattern.filter((x, i) => i % 2 === 0 || x > 0).join(' · ')}` : shape];
+  if (!coach.adaptive) bits.push(`${coach.breathCount} breaths`);
+  else if (tracking && coach.sensed && coach.sync !== null) bits.push(`in step ${Math.round(coach.sync * 100)}%`);
+  octx.font = '500 13px -apple-system, BlinkMacSystemFont, sans-serif';
+  octx.fillStyle = 'rgba(255,255,255,0.62)';
+  octx.fillText(bits.join('     '), 16, 50);
 }
+
+// Start screen for Guide and Coach: the pattern, a way to change it, one line
+// about what will happen, and a faint preview of the line.
+const PATTERN_WORDS = { '5-1-5-1': 'in · hold · out · hold', '5-0-5': 'in · out', '4-7-8': 'in · hold · out' };
+const patternNumbers = (key) => PATTERNS[key].filter((x, i) => i % 2 === 0 || x > 0).join(' · ');
+function renderIntro() {
+  const show = guided() && !running;
+  $('guideIntro').hidden = !show;
+  if (!show) return;
+  const key = $('patternSelect').value;
+  $('giPattern').textContent = patternNumbers(key);
+  $('giWords').textContent = PATTERN_WORDS[key] ?? '';
+  $('giLine').textContent = mode() === 'guide'
+    ? 'Follow the line. No camera, nothing to set up.'
+    : 'It starts at your own pace and slows you to this pattern. The camera follows your breath if you allow it; without it, it simply guides.';
+  const chips = $('patternChips');
+  chips.replaceChildren(...Object.keys(PATTERNS).map((k) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'gi-chip'; b.textContent = patternNumbers(k);
+    b.setAttribute('aria-pressed', String(k === key));
+    b.onclick = () => { $('patternSelect').value = k; $('patternSelect').onchange({ target: $('patternSelect') }); };
+    return b;
+  }));
+  drawPreview();
+}
+function drawPreview() {
+  if (!guided() || running) return;
+  const dpr = window.devicePixelRatio || 1;
+  const sw = overlay.clientWidth, sh = overlay.clientHeight;
+  if (overlay.width !== Math.round(sw * dpr) || overlay.height !== Math.round(sh * dpr)) { overlay.width = Math.round(sw * dpr); overlay.height = Math.round(sh * dpr); }
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.clearRect(0, 0, sw, sh);
+  const preview = new Coach(0, { pattern: PATTERNS[$('patternSelect').value], adaptive: false });
+  preview.update(preview.full * 3);
+  const top = sh * 0.18, floor = sh - $('controls').offsetHeight - 24, span = preview.full * 2.2;
+  octx.beginPath();
+  for (let i = 0; i <= 400; i++) {
+    const x = (i / 400) * sw, v = preview.level(1.5 + (i / 400) * span, true);
+    i ? octx.lineTo(x, floor - v * (floor - top)) : octx.moveTo(x, floor - v * (floor - top));
+  }
+  octx.setLineDash([]); octx.lineJoin = 'round'; octx.lineCap = 'round';
+  octx.strokeStyle = 'rgba(255,90,60,0.22)'; octx.lineWidth = 8; octx.stroke();
+}
+new ResizeObserver(() => drawPreview()).observe($('stage'));
 
 // Numbers and words around the pattern view. Runs on a timer, not on camera
 // frames, so it keeps working with no camera at all.
@@ -664,6 +717,7 @@ function setControls() {
   $('trackBtn').hidden = !(running && mode() === 'coach');
   $('trackBtn').textContent = tracking ? 'Tracking on' : 'Tracking off';
   $('trackBtn').setAttribute('aria-pressed', String(tracking));
+  renderIntro();
   $('startBtn').hidden = running;
   $('pauseBtn').hidden = !running;
   $('stopBtn').hidden = !running;
@@ -946,7 +1000,7 @@ $('soundToggle').onchange = (e) => localStorage.setItem('breathe.sound', e.targe
 $('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
 $('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
 $('patternSelect').value = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
-$('patternSelect').onchange = (e) => { localStorage.setItem('breathe.pattern', e.target.value); if (!running && guided()) setStatus(idleText()); };
+$('patternSelect').onchange = (e) => { localStorage.setItem('breathe.pattern', e.target.value); if (!running && guided()) setStatus(idleText()); renderIntro(); };
 $('coachSelect').value = localStorage.getItem('breathe.coachView') ?? 'path';
 $('coachSelect').onchange = (e) => localStorage.setItem('breathe.coachView', e.target.value);
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
@@ -980,12 +1034,15 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, get tracking() { return tracking; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=!chestOnly()||mode()==='guide';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=!chestOnly()||mode()==='guide';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
 function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pulse.hr.map(x=>({t:x.t,bpm:x.v})):pulse.rr.map(x=>({t:x.t,bpm:60000/x.v}))):[]);}
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
+
+const modeChanged = $('modeSelect').onchange;
+$('modeSelect').onchange = () => { modeChanged(); renderIntro(); };
 
 // Open in the mode used last time; the coach by default.
 {
