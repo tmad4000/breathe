@@ -42,6 +42,21 @@ out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
 then replay it with `?src=`.
 
+**Coach (v0.6.0):** Mode → Coach, or open `https://jacobcole.ai/breathe/?coach`
+to start it straight away (for a home-screen icon or an iOS Shortcut). It opens
+with one long breath out, reads your pace from your first agreeing breaths
+(about 12–15 s in), sets the guide to your rhythm, then slows it toward 6/min:
+one step per breath while you are clearly in step, every second breath
+otherwise. If you fall out of step it holds, and if that lasts it comes back to
+your pace. With no tracking it still guides, on a schedule. The view is a lane:
+the blue guide scrolls toward a "now" line and your breath is the white trace
+and dot, over a dimmed camera picture. The logic is `coach.js` (pure, tested in
+`test/coach.test.mjs` against simulated people). Thresholds are first guesses.
+
+**Fixed axis:** the breath line is drawn against a visible resting line and an
+in/out scale that stay put; the frame is taken from the chest box, which only
+moves when you do, not from the face box.
+
 **Breath line size:** History & settings → Breath line. "Large" (default) draws
 the line across both boxes, "Fills the chest box" keeps it inside the lower
 box, "Small" is the compact upper-chest line. It always stays above the

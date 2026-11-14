@@ -118,3 +118,10 @@ body:has(#pulsePanel:not([hidden])) .ring-label small { font-size: 9.5px; }
 .title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 #modeSelect { min-width: 0; flex: 1; }
 .pulseMetrics:has(.metric:not([hidden]) ~ .metric:not([hidden]) ~ .metric:not([hidden]) ~ .metric:not([hidden])) .metric { padding: 8px 7px; }
+
+/* Coach: the camera picture recedes, the cue is large, the lane takes the stage. */
+#coachStats { display: none; }
+body.coach #coachStats { display: grid; }
+body.coach .stats:not(#coachStats) { display: none; }
+body.coach .stage video, body.coach #nativeView { filter: brightness(0.28) saturate(0.6); }
+body.coach #status { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }

@@ -19,7 +19,7 @@
     <button class="icon-btn" id="historyBtn" aria-label="History and settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3zm-1 5v5l4.25 2.52.77-1.28-3.52-2.09V8H12z"/></svg>
     </button>
-    <label class="title">Mode <select id="modeSelect"><option value="respiration">Respiration</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select></label>
+    <label class="title">Mode <select id="modeSelect"><option value="respiration">Respiration</option><option value="coach">Coach</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select></label>
     <button class="icon-btn" id="flipBtn" aria-label="Switch camera">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-5 11.5V14H9v2.5L5.5 13 9 9.5V12h6V9.5l3.5 3.5-3.5 3.5z"/></svg>
     </button>
@@ -50,6 +50,12 @@
     <div><span class="k">Time</span><span class="v" id="elapsed">0:00</span></div>
     <div><span class="k">Breaths</span><span class="v" id="breaths">0</span></div>
     <div><span class="k">Session avg</span><span class="v" id="avg">--</span></div>
+  </section>
+
+  <section class="stats" id="coachStats">
+    <div><span class="k">Time</span><span class="v" id="coachTime">0:00</span></div>
+    <div><span class="k">Guide /min</span><span class="v" id="coachPace">--</span></div>
+    <div><span class="k">In step</span><span class="v" id="coachSync">--</span></div>
   </section>
 
   <main class="stage" id="stage">
