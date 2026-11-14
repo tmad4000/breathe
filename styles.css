@@ -112,3 +112,9 @@ button { font: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .ring.turn .ring-track { animation: none; } }
 body:has(#pulsePanel:not([hidden])) .ring-label span { font-size: 24px; }
 body:has(#pulsePanel:not([hidden])) .ring-label small { font-size: 9.5px; }
+
+/* Front-camera frames from the iOS shell, shown in place of the video. */
+#nativeView { object-fit: cover; transform: scaleX(-1); }
+.title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#modeSelect { min-width: 0; flex: 1; }
+.pulseMetrics:has(.metric:not([hidden]) ~ .metric:not([hidden]) ~ .metric:not([hidden]) ~ .metric:not([hidden])) .metric { padding: 8px 7px; }

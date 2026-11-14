@@ -1,0 +1,30 @@
+# Generate the Xcode project with `xcodegen generate` in this folder.
+name: Breathe
+options:
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  Breathe:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Breathe
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        NSCameraUsageDescription: Breathe uses the front camera to follow your breathing and the rear camera to read your pulse from a fingertip. Video stays on this device.
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
+        ITSAppUsesNonExemptEncryption: false
+        BreatheURL: https://jacobcole.ai/breathe/
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openinfra.breathe
+        DEVELOPMENT_TEAM: JESMXK96LG
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: NO

@@ -107,7 +107,8 @@ export class PulseSession {
     this.lastInput=t;
     if(this.goodAt!==null && t-this.goodAt>=3)this.loseSignal(t);
     if(this.samples.length && t-this.samples.at(-1).t>.2)this.samples=[];
-    if(rgb.some(v=>!Number.isFinite(v)||v<5||v>250)){this.loseSignal(t);return;}
+    // Contact pulse reads green only; a torch-lit fingertip can clip red and leave blue near zero.
+    if(rgb.some(v=>!Number.isFinite(v))||(this.remote?rgb.some(v=>v<5||v>250):rgb[1]<5||rgb[1]>250)){this.loseSignal(t);return;}
     this.samples.push({t,rgb});this.samples=this.samples.filter(x=>x.t>t-10);
     if(t-this.last<1)return;this.last=t;
     this.acceptAnalysis(t,pulseAnalysis(this.samples,this.remote),breath);

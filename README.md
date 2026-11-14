@@ -93,3 +93,28 @@ Signal loss, pauses and poor-quality windows blank estimates. Brief analysis fai
 Validation design and real-device comparison plan: [docs/coherence-design.md](docs/coherence-design.md). Unit tests: `npm test`. Synthetic clip browser test: `node test/coherence-e2e.mjs` with the local server running and `test/fixtures/pulse72.mp4` generated as documented in the test. Camera accuracy on actual phones is unvalidated.
 
 Fingertip ring: heart rate during warmup, coherence ratio when available; the arc continues following the breathing guide. Warmup shows the seconds of usable signal still needed. Contact beat times are refined against original video sample timestamps. The constant-72-bpm clip regression requires RMSSD below 10 ms; this is not an accuracy guarantee for phone cameras.
+
+## iOS shell: two cameras at once (`ios/`, unbuilt as of 2026-11-13)
+
+A browser gets one camera at a time. The shell in `ios/` is a small Swift app
+that shows this same web app in a web view and runs the front and rear cameras
+together (`AVCaptureMultiCamSession`, iPhone XS/XR or later). Inside it the
+mode menu gains **Coherence · two cameras**: hold the phone facing you with a
+fingertip on the rear lens. The front camera follows your chest for breathing;
+the rear camera and torch read your pulse beat by beat.
+
+- The page asks for the cameras with `webkit.messageHandlers.breathe.postMessage({cmd: 'start' | 'stop'})`.
+- The shell calls `__breatheNative.frame(jpegBase64, seconds)` with front frames
+  (480 px wide, one at a time) and `__breatheNative.pulse(seconds, r, g, b)` with
+  the mean colour of the centre of each rear frame.
+- The shell loads the live site, so web updates reach it without an app update.
+  `-BreatheURL https://…` as a launch argument points it at a dev server.
+
+Build: `cd ios && xcodegen generate`, then open `Breathe.xcodeproj` in Xcode
+and run on a phone (the simulator has no cameras). `node test/native-e2e.mjs`
+checks the page's side of the bridge in Chrome with a stand-in for the shell.
+
+Status: the page side is tested. The Swift has only been syntax-checked, never
+compiled against the iOS SDK or run on a phone. To verify on a device: torch
+works while both cameras run, the fingertip colour is not clipped, frame rate
+holds near 30, and the phone does not get hot.
