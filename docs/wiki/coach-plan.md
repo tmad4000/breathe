@@ -1,5 +1,26 @@
 # Adaptive coach
 
+**v0.10.0 redesign (2026-11-13), after Jacob's first real sessions.** His notes: the line should
+keep its natural shape wherever you are in the breath; a 5-1-5-1 pattern should show its flat
+holds; the guide once drove the pace up to about 20/min; it should start where you are and slow
+you down, always converging on a target pattern; and there should be a plain guide that does not
+respond at all, usable with no camera. What changed:
+
+- One number, `cycle` (seconds per breath), scales the whole pattern. Shape is constant.
+- Guide mode: fixed pattern, no camera. Coach: starts at clamp(your cycle, 6 s, full) and adds
+  0.5 s per breath; after the first catch (first 25 s) the cycle is a ratchet and never shortens.
+- Out of step: wait up to three breaths, then continue. It always arrives.
+- Display: the line is never bent toward the person. Ball = guide, ring = you.
+- Camera failure or "Tracking off" degrades to guiding; `Coach.log` records every decision.
+- The 20/min run: the old engine re-caught upward to any measured pace up to 20/min, so noisy
+  turn detection could ratchet it up. That path no longer exists; `test/coach.test.mjs` has a
+  jitter case for it. We have no log of that session, which is why logging was added.
+
+Ideas not built yet: an ending (a slow closing breath and a one-line result rather than running
+until Stop); exhale-lengthening as its own destination; a resonance finder that sweeps 6.5 to
+4.5/min and keeps where heart rate swings most; a 60-second "reset" entry for scroll-breaking;
+spoken cues; a session history view that plots start pace against end pace over days.
+
 **Built in v0.6.0 (2026-11-13):** engine (`coach.js`) and Lane view, resonance
 destination only. Changed from the proposal below at Jacob's direction ("catch
 you faster and drop you in; the point is to break out of scrolling"): no silent

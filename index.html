@@ -23,7 +23,7 @@
       <span class="app-version" id="topVersion"></span>
       <button class="update-btn" id="updateBtn" hidden>Update<span class="sep"> · </span><span class="what">tap to reload</span></button>
     </div>
-    <label class="title"><span class="mode-word">Mode</span> <select id="modeSelect"><option value="coach">Coach</option><option value="respiration">Respiration</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select></label>
+    <label class="title"><span class="mode-word">Mode</span> <select id="modeSelect"><option value="coach">Coach</option><option value="guide">Guide (no camera)</option><option value="respiration">Respiration</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select></label>
     <button class="icon-btn" id="flipBtn" aria-label="Switch camera">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-5 11.5V14H9v2.5L5.5 13 9 9.5V12h6V9.5l3.5 3.5-3.5 3.5z"/></svg>
     </button>
@@ -58,14 +58,15 @@
 
   <section class="stats" id="coachStats">
     <div><span class="k">Time</span><span class="v" id="coachTime">0:00</span></div>
-    <div><span class="k">Guide /min</span><span class="v" id="coachPace">--</span></div>
-    <div><span class="k">In step</span><span class="v" id="coachSync">--</span></div>
+    <div><span class="k">Pattern now</span><span class="v" id="coachPace">--</span></div>
+    <div><span class="k" id="coachSyncK">In step</span><span class="v" id="coachSync">--</span></div>
   </section>
 
   <main class="stage" id="stage">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
     <canvas id="overlay"></canvas>
+    <button id="trackBtn" class="track-btn" hidden aria-pressed="true">Tracking on</button>
     <div class="controls" id="controls">
       <button class="btn primary" id="startBtn">Start</button>
       <button class="btn secondary" id="pauseBtn" hidden>Pause</button>
@@ -84,6 +85,7 @@
         <div><span class="k">Range</span><span class="v" id="sumRange">--</span></div>
       </div>
       <p class="muted" id="sumPace" hidden></p>
+      <details id="coachLogBox" class="coach-log" hidden><summary>What the guide did</summary><pre id="coachLog"></pre></details>
       <canvas id="trendChart" class="chart" aria-label="Breathing rate over time"></canvas>
       <div class="row">
         <button class="btn secondary" id="clipBtn" hidden>Share clip</button>
@@ -118,7 +120,7 @@
           <option value="4-7-8">4 in · hold 7 · 8 out</option>
         </select>
       </label>
-      <p class="muted hint">Where the coach leads you. It starts at your own pace with no holds, and the holds grow in as you slow down.</p>
+      <p class="muted hint">The pattern Guide plays and Coach leads you to. Coach starts with a shorter version of the same shape near your own pace and only ever lengthens it.</p>
       <label class="field">
         <span>Coach view</span>
         <select id="coachSelect">

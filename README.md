@@ -63,6 +63,28 @@ never offer an older version. Releases bump the version in `package.json`,
 `version.json` and `VERSION` in `app.js` together; `npm test` fails if they
 differ.
 
+**v0.10.0, Guide and a redesigned Coach** (this replaces the coach behaviour
+described in the older paragraphs below):
+
+- **Guide (no camera)** plays the chosen pattern and nothing else. It never asks
+  for the camera and does not respond to you. `?guide` starts it on load.
+- **Coach** shows the same line. It opens with one long breath out, measures
+  your pace, and starts a *shorter version of the same pattern* near it (never
+  faster than 10 breaths/min), then lengthens the breath by half a second at a
+  time until it is the full pattern. After the first catch the breath only ever
+  gets longer: the guide can wait for you (at most three breaths), but it cannot
+  speed up, and it always ends at the target.
+- **The line never bends.** It is the pattern itself: up, flat hold, down, flat
+  hold, always from completely empty to completely full, with holds at every
+  pace. The yellow ball rides the line; a white ring marked "you" shows your
+  measured breath when the camera has you.
+- **No camera is not an error.** If the camera fails, Coach carries on as a
+  guide. The "Tracking on/off" button on the stage releases or reopens the
+  camera mid-session.
+- **Session log.** Every guided session saves what the guide did and why
+  (caught pace, each longer breath, waiting, tracking lost). Open a session in
+  History → "What the guide did", or export the CSV (rows of type `coach`).
+
 **v0.8.0, coach patterns and full-height targets:** Settings → Coach pattern
 chooses the destination: 5 in · hold 1 · 5 out · hold 1 (default), 5 in · 5 out,
 or 4-7-8. At your own pace there are no holds; they grow to full length as the
