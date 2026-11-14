@@ -140,3 +140,12 @@ body.coach.running #status { font-size: 24px; font-weight: 600; letter-spacing: 
 @media (max-width: 480px) { .update-btn .sep { display: none; } .update-btn .what { display: block; font-weight: 400; } }
 /* On a phone the select already names the mode; the word "Mode" stays for screen readers only, making room for the version. */
 @media (max-width: 480px) { .mode-word { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
+
+/* Guided modes: tracking switch on the stage, and the session log in the summary. */
+.track-btn { position: absolute; top: 10px; right: 10px; z-index: 2; height: 32px; padding: 0 12px; border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.45); color: #fff; font-size: 13px; font-weight: 500; }
+.track-btn[aria-pressed="false"] { background: rgba(255,255,255,0.14); border-style: dashed; }
+.coach-log { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+.coach-log summary { cursor: pointer; padding: 6px 0; }
+.coach-log pre { margin: 6px 0 0; padding: 10px; overflow-x: auto; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--track); border-radius: 8px; color: var(--text); }
+body.coach #coachStats .v { font-size: 16px; }
