@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -623,6 +623,7 @@ function cue(inhale) {
 })();
 
 function setControls() {
+  document.body.classList.toggle("running", running);
   $('modeSelect').disabled = running;
   $('flipBtn').disabled = running || !chestOnly();
   $('startBtn').hidden = running;
