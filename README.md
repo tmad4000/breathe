@@ -42,6 +42,11 @@ out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
 then replay it with `?src=`.
 
+**Breath line size:** History & settings → Breath line. "Large" (default) draws
+the line across both boxes, "Fills the chest box" keeps it inside the lower
+box, "Small" is the compact upper-chest line. It always stays above the
+Pause/Stop buttons.
+
 **Seeing what it judged:** each time the tracker decides a breath has turned,
 it marks the spot on the breath line (solid dot: inhale became exhale; open dot:
 exhale became inhale), the ring flashes, and the ring and chest box say "in" or
