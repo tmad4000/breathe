@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.4.3';
+const VERSION = '0.5.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
@@ -23,6 +23,15 @@ const $ = (id) => document.getElementById(id);
 const video = $('video');
 const overlay = $('overlay');
 const octx = overlay.getContext('2d');
+// Inside the iOS shell, native code owns both cameras: it sends front-camera
+// frames (drawn into nativeView) and the rear fingertip colour for each frame.
+const NATIVE = window.__breatheNativeInfo?.dual ? window.webkit?.messageHandlers?.breathe ?? null : null;
+const nativeView = $('nativeView');
+const nativeCtx = nativeView.getContext('2d');
+let source = video;              // where frames are read from: the <video>, or nativeView
+const srcW = () => (source === video ? video.videoWidth : source.width);
+const srcH = () => (source === video ? video.videoHeight : source.height);
+let nativeReady = null, nativeBusy = false, nativeError = '';
 const crop = document.createElement('canvas');
 const cctx = crop.getContext('2d', { willReadFrequently: true });
 
@@ -49,13 +58,39 @@ let steadySince = null;
 let audioCtx = null, lastGuideInhale = null;
 let recorder = null, clipChunks = [], clipBlob = null;
 
-$('version').textContent = VERSION;
+$('version').textContent = VERSION + (window.__breatheNativeInfo?.shell ? ` · app ${window.__breatheNativeInfo.shell}` : '');
 // The tab title names the open mode, not just the app.
 function setTitle() {
   const sel = $('modeSelect');
   document.title = `${sel.options[sel.selectedIndex].text} — Breathe`;
 }
+if (NATIVE) $('modeSelect').add(new Option('Coherence · two cameras', 'dual'));
 setTitle();
+
+// Calls from the native shell. frame: a front-camera JPEG (base64) to analyse
+// and show. pulse: mean colour of the rear (fingertip) frame at time t seconds.
+window.__breatheNative = {
+  async frame(b64, t) {
+    if (!stream?.native || nativeBusy) return;
+    nativeBusy = true;
+    try {
+      const bmp = await createImageBitmap(await (await fetch(`data:image/jpeg;base64,${b64}`)).blob());
+      if (!stream?.native) return;
+      if (nativeView.width !== bmp.width || nativeView.height !== bmp.height) { nativeView.width = bmp.width; nativeView.height = bmp.height; }
+      nativeCtx.drawImage(bmp, 0, 0);
+      bmp.close();
+      if (nativeReady) { nativeReady(); nativeReady = null; }
+      else if (PW) processFrame(performance.now(), t);
+    } catch { /* a frame that fails to decode is skipped */ } finally { nativeBusy = false; }
+  },
+  pulse(t, r, g, b) {
+    if (!stream?.native) return;
+    pulseFrameAt = performance.now();
+    if (pulse && running && !paused) pulse.push(t, [r, g, b], null);
+  },
+  note(text) { torchNote = text; },
+  error(text) { nativeError = text; if (stream?.native) setStatus(text); },
+};
 
 // ---------- setup ----------
 
@@ -75,6 +110,21 @@ async function startCamera() {
   stopCamera();
   pulse?.reset();
   if(mode() !== 'respiration') facing = mode() === 'finger' ? 'environment' : 'user';
+  source = mode() === 'dual' ? nativeView : video;
+  nativeView.hidden = source === video; video.hidden = source !== video;
+  if (source === nativeView) {
+    stream = { getTracks: () => [], getVideoTracks: () => [], native: true };
+    mirrored = true; torchNote = ''; nativeError = '';
+    NATIVE.postMessage({ cmd: 'start' });
+    await new Promise((resolve, reject) => {
+      nativeReady = resolve;
+      setTimeout(() => reject(new Error(nativeError || 'the cameras did not start')), 8000);
+    });
+    const s = PROC_MAX_SIDE / Math.max(srcW(), srcH());
+    PW = Math.round(srcW() * s); PH = Math.round(srcH() * s);
+    havePrev = false; face = null; chest = null;
+    return;
+  }
   if (TEST_SRC) {
     // Dev/test input: a looping video file instead of the camera (?src=clip.mp4).
     stream = { getTracks: () => [], getVideoTracks: () => [] };
@@ -106,6 +156,8 @@ async function startCamera() {
 
 function stopCamera() {
   cameraGeneration++;
+  if (stream?.native) NATIVE?.postMessage({ cmd: 'stop' });
+  nativeReady = null;
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
 }
@@ -130,8 +182,8 @@ function onFrame(mediaTime) {
 // Crop the chest box from the full-resolution video so sub-millimetre chest
 // motion is still a measurable fraction of a pixel.
 function grabChest() {
-  const k = video.videoWidth / PW;
-  cctx.drawImage(video, chest.x * k, chest.y * k, chest.w * k, chest.h * k, 0, 0, CW, CH);
+  const k = srcW() / PW;
+  cctx.drawImage(source, chest.x * k, chest.y * k, chest.w * k, chest.h * k, 0, 0, CW, CH);
   rgbaToGray(cctx.getImageData(0, 0, CW, CH).data, curGray);
 }
 
@@ -151,9 +203,9 @@ function processFrame(t, mediaTime) {
     lastDetectT = t;
     detectFace(t);
   }
-  pulseFrameAt=t;
+  if(mode()!=='dual')pulseFrameAt=t;
   const faceOk = t - faceSeenAt < FACE_LOST_MS;
-  if(pulse && running && !paused){
+  if(pulse && running && !paused && mode()!=='dual'){
     if(mode()==='finger' || (faceOk && t>=motionUntil)){
       const k=video.videoWidth/PW;
       const rois=mode()==='finger'?[{x:PW*.25,y:PH*.25,w:PW*.5,h:PH*.5}]:[
@@ -191,11 +243,11 @@ function processFrame(t, mediaTime) {
 
 function detectFace(t) {
   let res;
-  try { res = detector.detectForVideo(video, t); } catch { return; }
+  try { res = detector.detectForVideo(source, t); } catch { return; }
   const dets = res.detections ?? [];
   if (!dets.length) return;
   const bb = dets.reduce((a, b) => (b.boundingBox.width > a.boundingBox.width ? b : a)).boundingBox;
-  const s = PW / video.videoWidth;
+  const s = PW / srcW();
   const f = { x: bb.originX * s, y: bb.originY * s, w: bb.width * s, h: bb.height * s };
   face = face ? lerpRect(face, f, 0.5) : f;
   faceSeenAt = t;
@@ -384,6 +436,7 @@ function updateUi(t, faceOk) {
   else if (!faceOk) setStatus('Looking for you… Keep your face and shoulders in the frame.');
   else if (chestHidden || !chest) setStatus('Move the phone back a little so your chest is in view.');
   else if (t < motionUntil) setStatus('Hold still…');
+  else if (mode() === 'dual' && pulse && !pulse.result) setStatus(`Rest a fingertip lightly on the rear lens. ${torchNote}`);
   else if (guide) setStatus(`${guide.inhale ? 'Breathe in…' : 'Breathe out…'}  Guide: ${session.paceBpm}/min${rate ? '' : ' · measuring'}`);
   else if (!rate && session.activeS > 25 && t - steadySince >= RECOVER_MS) setStatus('Signal is weak. Hold still, keep your chest well lit and in the lower box.');
   else if (!rate) setStatus('Tracking small changes in your chest. Breathe comfortably and hold still…');
@@ -484,7 +537,7 @@ function stop() {
 // Optional short recording of the camera so a session can be replayed through
 // ?src= for tuning. Stays on the device unless the user shares it.
 function startClip() {
-  if (TEST_SRC || !window.MediaRecorder || !stream) return;
+  if (TEST_SRC || !window.MediaRecorder || !stream || stream.native) return;
   const type = ['video/mp4', 'video/webm'].find((t) => MediaRecorder.isTypeSupported(t));
   try { recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 4_000_000 }); } catch { recorder = null; return; }
   clipChunks = [];
@@ -674,7 +727,7 @@ loadDetector().catch(() => {}); // warm up while the user gets positioned
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=mode()!=='remote';$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=mode()==='respiration';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').disabled=mode()!=='respiration';if(mode()!=='respiration'){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
