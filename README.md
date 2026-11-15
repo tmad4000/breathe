@@ -243,3 +243,11 @@ opens the pace and tone controls without taking height from the camera.
 back. This preference is remembered for Respiration Tracker only. Coach, Guide
 and Coherence retain their own views. The original design and the new mockup
 are saved under `docs/design/2026-11-15-respiration-tracker/`.
+
+Send feedback loads the World Issue Tracker widget from worldissuetracker.com.
+Camera cover is display-only: capture and optical-flow input remain unchanged.
+If cover would crop a tracked face/chest box, display falls back to contain.
+Rendering telemetry records 10-second fps/processing-time windows. Glass blur
+starts off, is enabled only after a healthy baseline, and is dropped if frame
+rate or processing time deteriorates. The dark translucent fill remains without
+blur or browser support.
