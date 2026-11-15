@@ -1,12 +1,12 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.13.3';
+const VERSION = '0.13.4';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
 import { isNewerVersion } from './update.js';
-import { displayMapping, BlurBudget } from './display-layout.js';
+import { displayMapping, CoverPan, BlurBudget } from './display-layout.js';
 import './app-stamp.js';
 import { DebugRecorder } from './debug-recorder.js';
 import { BreathFeedback } from './breath-feedback.js';
@@ -38,7 +38,7 @@ const STORE_KEY = 'breathe.sessions.v1';
 const RING_LEN = 276.46;
 
 const $ = (id) => document.getElementById(id);
-let respPan={x:.5,y:.5,targetX:.5,targetY:.5,t:performance.now()};
+let respPan=new CoverPan(performance.now()),lastObjectPosition='';
 let frameWindow={n:0,processing:0,interval:0,start:performance.now()},blurBudget=new BlurBudget(false);
 let chartFocus = localStorage.getItem('breathe.layout.respiration.v1') === 'chart', respTrayOpen = false;
 const respAnchors = [...document.querySelectorAll('.card,section.stats:not(#coachStats),#trackingNotice,#switchNotice')].map(el=>{
@@ -1331,7 +1331,7 @@ function renderRespirationLayout() {
   document.body.classList.toggle('resp-tray-open',resp&&respTrayOpen);
   for(const {el,anchor} of respAnchors){if(resp){const target=el.matches('section.stats')?document.querySelector('.card'):$('stage');if(el.parentElement!==target)target.append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
   if(chartFocus||!resp)$('respTrace').style.height='';
-  if(!resp){video.style.objectFit='';video.style.objectPosition='';}
+  if(!resp){video.style.objectFit='';video.style.objectPosition='';lastObjectPosition='';}
   $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;$('respTuneBtn').hidden=!resp||!running;
   $('chartFocusBtn').setAttribute('aria-pressed',String(chartFocus));$('chartFocusBtn').textContent=chartFocus?'Camera':'Chart focus';
   $('respTuneBtn').setAttribute('aria-expanded',String(respTrayOpen));
@@ -1349,15 +1349,12 @@ function drawRespirationOverlay(faceOk) {
   const box=video.getBoundingClientRect(),stageBox=$('stage').getBoundingClientRect();
   const w=box.width,h=box.height,x=box.left-stageBox.left,y=box.top-stageBox.top;
   const validFocus=!chartFocus&&faceOk&&!chestHidden&&performance.now()>=motionUntil?chest:null;
-  const opts={sourceWidth:PW,sourceHeight:PH,width:w,height:h,x,y,focus:validFocus,mirrored};
+  const opts={sourceWidth:PW,sourceHeight:PH,width:w,height:h,x,y,focus:validFocus,rects:validFocus?[face,chest]:[],mirrored};
   const desired=displayMapping(opts),now=performance.now();
-  if(Math.abs(desired.target.x-respPan.targetX)>.04)respPan.targetX=desired.target.x;
-  if(Math.abs(desired.target.y-respPan.targetY)>.04)respPan.targetY=desired.target.y;
-  const blend=1-Math.exp(-Math.min(100,now-respPan.t)/100);respPan.t=now;
-  respPan.x+=(respPan.targetX-respPan.x)*blend;respPan.y+=(respPan.targetY-respPan.y)*blend;
-  const mapping=displayMapping({...opts,position:chartFocus?{x:.5,y:.5}:respPan});
+  const applied=respPan.update(desired.target,now,!!validFocus);
+  const mapping=displayMapping({...opts,position:chartFocus?{x:.5,y:.5}:applied});
   if(video.style.objectFit!=='cover')video.style.objectFit='cover';
-  const objectPosition=`${mapping.position.x*100}% ${mapping.position.y*100}%`;if(video.style.objectPosition!==objectPosition)video.style.objectPosition=objectPosition;
+  const objectPosition=`${mapping.position.x*100}% ${mapping.position.y*100}%`;if(lastObjectPosition!==objectPosition){video.style.objectPosition=objectPosition;lastObjectPosition=objectPosition;}
   const clipBottom=Math.min(sh,$('controls').getBoundingClientRect().top-stageBox.top);
   octx.save();octx.beginPath();octx.rect(x,y,w,Math.max(0,Math.min(y+h,clipBottom)-y));octx.clip();octx.lineWidth=1.5;octx.strokeStyle='rgba(255,255,255,.75)';octx.setLineDash([3,4]);
   for(const r of (faceOk?[face,chest]:[])){if(!r)continue;const q=mapping.map(r);octx.strokeRect(q.x,q.y,q.w,q.h);}
