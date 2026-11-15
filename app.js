@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.12.0';
+const VERSION = '0.12.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -82,7 +82,8 @@ let recorder = null, clipChunks = [], clipBlob = null;
 
 window.breatheDebug = new DebugRecorder($('debugPanel'), $('debugChip'));
 $('debugChip').onclick = () => { openSheet('historySheet'); $('debugPanel').scrollIntoView({block:'start'}); };
-$('skipDebug').onclick = () => { if(running||starting)return; window.breatheDebug.skip=true; start(); };
+$('debugDetails').onclick = () => { $('debugNotice').hidden=true; $('debugChip').click(); };
+setTimeout(()=>{$('debugNotice').hidden=true;},6000);
 $('debugNotice').hidden = localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled;
 $('guideToneToggle').onchange = () => { guideToneOn=$('guideToneToggle').checked; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); syncQuickControls(); };
 
@@ -96,7 +97,7 @@ function setTitle() {
   const what = sel.options[sel.selectedIndex].text;
   document.title = `${sheet ? `${sheet.querySelector('h2').textContent} · ` : ''}${what} — Breathe`;
 }
-if (NATIVE) $('modeSelect').add(new Option('Coherence · two cameras', 'dual'));
+if (NATIVE) { $('modeSelect').add(new Option('Coherence · two cameras', 'dual')); $('coherenceChoice').add(new Option('Two cameras','dual')); }
 setTitle();
 
 // Calls from the native shell. frame: a front-camera JPEG (base64) to analyse
@@ -1369,7 +1370,9 @@ function changePattern(value, undo = true) {
   renderIntro(); syncQuickControls();
 }
 function syncQuickControls() {
-  $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided();
+  $('coherenceChoice').disabled=starting;
+  $('coherenceChoiceLabel').hidden=chestOnly(); $('coherenceChoice').value=chestOnly()?'finger':mode();
+  $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided()||!running;
   $('quickPace').value = $('paceSelect').value; $('quickPattern').value = $('patternSelect').value;
   $('guideToneBtn').setAttribute('aria-pressed',String(guideToneOn)); $('guideToneToggle').checked=guideToneOn;
   $('guideToneBtn').textContent='Guide tone'+(!soundOn?' · muted':''); $('detectionToneBtn').textContent='Detection tone'+(!soundOn?' · muted':'');
@@ -1377,17 +1380,19 @@ function syncQuickControls() {
   $('detectionToneBtn').hidden = mode()==='guide';
   $('detectionToneBtn').setAttribute('aria-pressed',String($('ownSoundToggle').checked));
   $('modeSelect').disabled=starting;
-  for (const b of $('modeTabs').children) { b.disabled=starting; b.setAttribute('aria-pressed', String(b.dataset.mode === mode())); }
+  for (const b of $('modeTabs').children) { b.disabled=starting; b.setAttribute('aria-pressed', String(b.dataset.mode === mode()||(b.dataset.mode==='finger'&&!chestOnly()))); }
   if (!running && !cameraFailure) { $('trackingNotice').hidden = true; document.body.classList.remove('tracking-blocked'); }
 }
 for (const [quick,original] of [['quickPace','paceSelect'],['quickPattern','patternSelect']]) $(''+quick).innerHTML = $(original).innerHTML;
+$('coherenceChoice').onchange=e=>{if(starting)return;$('modeSelect').value=e.target.value;$('modeSelect').onchange();};
 $('quickPace').onchange = e => changePace(e.target.value);
 $('quickPattern').onchange = e => changePattern(e.target.value);
 $('guideToneBtn').onclick = () => { guideToneOn = !guideToneOn; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); if (guideToneOn && soundOn) ensureAudio(); syncQuickControls(); };
 $('detectionToneBtn').onclick = () => { $('ownSoundToggle').checked = !$('ownSoundToggle').checked; $('ownSoundToggle').onchange(); };
 for (const o of $('modeSelect').options) {
-  const b = document.createElement('button'); b.type='button'; b.textContent=o.text; b.dataset.mode=o.value;
-  b.onclick=()=>{ if (mode() === o.value) return; $('modeSelect').value=o.value; $('modeSelect').onchange(); }; $('modeTabs').append(b);
+  if(['remote','dual'].includes(o.value))continue;
+  const b = document.createElement('button'); b.type='button'; b.textContent=o.value==='guide'?'Guide':o.value==='finger'?'Coherence':o.text; b.dataset.mode=o.value;
+  b.onclick=()=>{ b.scrollIntoView({block:'nearest',inline:'nearest'}); if (mode() === o.value) return; $('modeSelect').value=o.value; $('modeSelect').onchange(); }; $('modeTabs').append(b);
 }
 
 // Open in the mode used last time; the coach by default.

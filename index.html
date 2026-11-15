@@ -37,6 +37,7 @@
   </header>
 
   <nav id="modeTabs" class="mode-tabs" aria-label="Breathing modes"></nav>
+  <label id="coherenceChoiceLabel" class="coherence-choice" hidden>Camera <select id="coherenceChoice"><option value="finger">Fingertip</option><option value="remote">Hands-free</option></select></label>
   <p id="switchNotice" class="switch-notice" role="status" hidden><span></span> <button id="undoChange" type="button">Undo</button></p>
   <aside id="trackingNotice" class="tracking-notice" role="status" hidden><strong id="trackingTitle"></strong><span id="trackingFix"></span><button id="useGuideBtn" type="button" hidden>Use Guide</button></aside>
   <section class="card" aria-live="polite">
@@ -72,7 +73,7 @@
     <div><span class="k" id="coachSyncK">In step</span><span class="v" id="coachSync">--</span></div>
   </section>
 
-  <p id="debugNotice" class="debug-notice">Debug saves breathing signals here. No video or uploads. <button id="skipDebug" type="button">Start without recording</button></p>
+  <p id="debugNotice" class="debug-notice">Debug recording is on, saved on this device only. <button id="debugDetails" type="button">Details</button></p>
   <main class="stage" id="stage">
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
@@ -191,12 +192,13 @@
       <label class="toggle"><input type="checkbox" id="guideToneToggle" checked><span>Guide tone (timer sound); keeps the visual guide when off</span></label>
       <section id="debugPanel" class="debug-panel" aria-label="Device-private debug sessions">
         <h3>Debug sessions · this browser only</h3>
-        <p>Saves your breathing signal and app events in this browser. No video or audio. Accessible to anyone using this browser profile. Nothing is uploaded. Retained for 14 days or up to 100 MB; Keep exempts age only.</p>
+        <p>Saves your breathing signal and app events in this browser. No video or audio. Accessible to anyone using this browser profile. Nothing is uploaded. Retained for 14 days or up to 100 MB; Pinned sessions are never auto-deleted; unpinned sessions are pruned after 14 days or 100 MB.</p>
         <label class="toggle"><input type="checkbox" data-enabled checked><span>Debug recording on</span></label>
         <p data-status role="status"></p>
         <button type="button" data-mark>Mark a problem</button> <button type="button" data-review>Saved sessions</button> <button type="button" data-delete-all>Delete all debug sessions</button>
         <div data-sessions></div>
       </section>
+      <p><span id="breathe-feedback-mount"></span></p>
       <h3>History</h3>
       <ul id="historyList" class="history"></ul>
       <div class="row">
@@ -208,5 +210,6 @@
   </div>
 
   <script type="module" src="app.js"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.12.1"></script>
 </body>
 </html>

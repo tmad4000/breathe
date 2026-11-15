@@ -43,9 +43,7 @@ No image data is stored. A final partial motion batch flushes on Stop.
 Snapshots commit every two seconds and at Stop. An abrupt process kill can lose
 the final two seconds. Recordings are limited to 60,000 events per take and
 100 MB overall; reaching a limit stops debug capture with an explicit status.
-Long sessions remain usable without debug recording. Keep protects age expiry;
-unkept sessions are evicted oldest first to satisfy the cap. Kept-only overflow
-stops capture rather than silently deleting pinned evidence.
+Long sessions remain usable without debug recording. Pinned sessions are never auto-deleted; unpinned sessions are evicted oldest first to satisfy the cap. Pinned-only overflow shows a quiet storage-full state while lightweight signals and events continue.
 
 Review includes a trace plot and event timeline. K marks a problem (M is mute).
 Exports are a user action; agents cannot read the phone's browser database.
