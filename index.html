@@ -77,7 +77,7 @@
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
     <canvas id="overlay"></canvas>
-    <p id="respIdleHint">Face and upper chest in view, then tap Start.</p>
+    <div id="respIdleStatus"><p id="respIdleHint">Face and upper chest in view, then tap Start.</p></div>
     <span id="respTraceLabel">your breath</span>
     <canvas id="respTrace" aria-label="Live breathing trace" hidden></canvas>
     <button id="chartFocusBtn" type="button" class="layout-focus" aria-pressed="false" hidden>Chart focus</button>
@@ -194,6 +194,6 @@
     </div>
   </div>
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.14.0"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.14.1"></script>
 </body>
 </html>
