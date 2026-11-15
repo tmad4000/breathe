@@ -1,10 +1,15 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.13.4';
+const VERSION = '0.14.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
+import { modeName, PATTERN_NAMES, PACES, nextPaceBoundary } from './session-controls.js';
+let selectedPattern = Object.hasOwn(PATTERNS,localStorage.getItem('breathe.pattern')) ? localStorage.getItem('breathe.pattern') : '5-1-5-1';
+let activePattern = selectedPattern;
+let selectedPace = PACES.includes(localStorage.getItem('breathe.pace')) ? localStorage.getItem('breathe.pace') : '0';
+let detectedToneOn = localStorage.getItem('breathe.ownSound') === 'on';
 import { isNewerVersion } from './update.js';
 import { displayMapping, CoverPan, BlurBudget } from './display-layout.js';
 import './app-stamp.js';
@@ -14,14 +19,15 @@ let breathFeedback = new BreathFeedback();
 let coach = null, coachLastTurn = -Infinity;
 const chestOnly = () => ['respiration', 'coach', 'guide'].includes(mode());   // modes with no pulse sensing
 const guided = () => mode() === 'coach' || mode() === 'guide';                // modes that show the breath pattern
+let trackingRequest=0;
 let tracking = false;            // coach only: the camera is following the person right now
 let coachSeenAt = -Infinity;     // last camera frame in which the tracker had a steady view of them
 let coachNote = '';              // a standing remark, e.g. that the camera is unavailable
 let lastCoachUi = 0;
-const patternLabel = () => { const sel = $('patternSelect'); return sel.options[sel.selectedIndex].text; };
+const patternLabel = () => PATTERN_NAMES[activePattern].full;
 const idleText = () => mode() === 'guide'
-  ? `A paced breath guide, no camera: ${patternLabel()}. Tap Start.`
-  : `Coach: starts near your own pace and slows you to ${patternLabel()}. Tap Start.`;
+  ? 'Fixed breathing: follow the selected timing. No camera needed. Tap Start.'
+  : 'Adaptive breathing: gradually slow toward your target. Camera tracking is optional. Tap Start.';
 let pulse = null, torchNote = '', pulseFrameAt = -Infinity;
 const pulseCanvas = document.createElement('canvas');
 pulseCanvas.width = 48; pulseCanvas.height = 48;
@@ -40,7 +46,7 @@ const RING_LEN = 276.46;
 const $ = (id) => document.getElementById(id);
 let respPan=new CoverPan(performance.now()),lastObjectPosition='';
 let frameWindow={n:0,processing:0,interval:0,start:performance.now()},blurBudget=new BlurBudget(false);
-let chartFocus = localStorage.getItem('breathe.layout.respiration.v1') === 'chart', respTrayOpen = false;
+let chartFocus = localStorage.getItem('breathe.layout.respiration.v1') === 'chart';
 const respAnchors = [...document.querySelectorAll('.card,section.stats:not(#coachStats),#trackingNotice,#switchNotice')].map(el=>{
   const anchor=document.createComment('mode layout anchor');el.before(anchor);return {el,anchor};
 });
@@ -72,7 +78,7 @@ let paused = false, starting = false, preserveCameraForMode = false, sessionStar
 let motionBuffer = [];
 let cameraFailure = '', trackingBadSince = null, trackingGoodSince = null;
 let groupId = null, continuedFrom = null;
-let pausedAt = 0, sessionMode = null, sessionChanges = [], pendingPace = null;
+let pausedAt = 0, sessionMode = null, sessionChanges = [], pendingPace = null, pendingPattern = null;
 let guideToneOn = localStorage.getItem('breathe.guideTone') !== 'off';
 let wakeLock = null;
 
@@ -93,7 +99,6 @@ $('debugChip').onclick = () => { openSheet('historySheet'); $('debugPanel').scro
 $('debugDetails').onclick = () => { $('debugNotice').hidden=true; $('debugChip').click(); };
 setTimeout(()=>{$('debugNotice').hidden=true;},6000);
 $('debugNotice').hidden = localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled;
-$('guideToneToggle').onchange = () => { guideToneOn=$('guideToneToggle').checked; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); syncQuickControls(); };
 
 if(!$('version').textContent)$('version').textContent='v'+VERSION;
 $('nativeVersion').textContent=window.__breatheNativeInfo?.shell?` · app ${window.__breatheNativeInfo.shell}`:'';
@@ -106,7 +111,7 @@ function setTitle() {
   const what = sel.options[sel.selectedIndex].text;
   document.title = `${sheet ? `${sheet.querySelector('h2').textContent} · ` : ''}${what} — Breathe`;
 }
-if (NATIVE) { $('modeSelect').add(new Option('Coherence · two cameras', 'dual')); $('coherenceChoice').add(new Option('Two cameras','dual')); }
+if (NATIVE) { $('modeSelect').add(new Option('Coherence · two cameras', 'dual')); }
 setTitle();
 
 // Calls from the native shell. frame: a front-camera JPEG (base64) to analyse
@@ -150,8 +155,10 @@ function loadDetector() {
 
 async function startCamera() {
   stopCamera();
+  const requestedGeneration=cameraGeneration;
   pulse?.reset();
-  if(!chestOnly()) facing = mode() === 'finger' ? 'environment' : 'user';
+  if(mode()==='finger')facing='environment';
+  else if(mode()==='coach'||mode()==='remote')facing='user';
   source = mode() === 'dual' ? nativeView : video;
   nativeView.hidden = source === video; video.hidden = source !== video;
   if (source === nativeView) {
@@ -165,7 +172,7 @@ async function startCamera() {
     const s = PROC_MAX_SIDE / Math.max(srcW(), srcH());
     PW = Math.round(srcW() * s); PH = Math.round(srcH() * s);
     $('stage').classList.toggle('contain', PW > PH);
-    havePrev = false; face = null; chest = null;
+    havePrev = false; face = null; chest = null; faceSeenAt = -Infinity;
     return;
   }
   if (TEST_SRC) {
@@ -175,10 +182,12 @@ async function startCamera() {
     video.loop = true;
     mirrored = false;
   } else {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const acquired = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
     });
+    if(requestedGeneration!==cameraGeneration){acquired.getTracks().forEach(t=>t.stop());throw new DOMException('Camera request superseded','AbortError');}
+    stream=acquired;
     video.srcObject = stream;
     mirrored = facing === 'user';
   }
@@ -190,17 +199,19 @@ async function startCamera() {
   }
   video.classList.toggle('mirror', mirrored);
   await video.play();
+  if(requestedGeneration!==cameraGeneration)throw new DOMException('Camera request superseded','AbortError');
   const s = PROC_MAX_SIDE / Math.max(video.videoWidth, video.videoHeight);
   PW = Math.round(video.videoWidth * s);
   PH = Math.round(video.videoHeight * s);
   // A landscape camera (a laptop) is shown whole; a portrait one fills the stage.
   $('stage').classList.toggle('contain', PW > PH);
-  havePrev = false; face = null; chest = null;
+  havePrev = false; face = null; chest = null; faceSeenAt = -Infinity;
   scheduleFrame();
 }
 
 function stopCamera() {
   cameraGeneration++;
+  face=null; chest=null; faceSeenAt=-Infinity; havePrev=false;
   if (stream?.native) NATIVE?.postMessage({ cmd: 'stop' });
   nativeReady = null;
   stream?.getTracks().forEach((t) => t.stop());
@@ -250,7 +261,7 @@ function processFrame(t, mediaTime) {
     detectFace(t);
   }
   if(mode()!=='dual')pulseFrameAt=t;
-  const faceOk = t - faceSeenAt < FACE_LOST_MS;
+  const faceOk = Boolean(face) && t - faceSeenAt < FACE_LOST_MS;
   if(pulse && running && !paused && mode()!=='dual'){
     if(mode()==='finger' || (faceOk && t>=motionUntil)){
       const k=video.videoWidth/PW;
@@ -284,8 +295,8 @@ function processFrame(t, mediaTime) {
       // Hand the coach each newly judged turn, moved onto the wall clock.
       for (const u of breathFeedback.take(session.turns, t >= motionUntil)) {
         if (coach && tracking) coach.userTurn(t / 1000 - (session.displayT - u.t), u.exhale);
-        debugEvent('breath-turn',{signalTime:u.t,detectedTime:t,exhale:u.exhale,toneRequested:$('ownSoundToggle').checked&&soundOn,toneTime:$('ownSoundToggle').checked&&soundOn&&audioCtx?.state==='running'?performance.now():null});
-        if ($('ownSoundToggle').checked) tick(u.exhale);
+        debugEvent('breath-turn',{signalTime:u.t,detectedTime:t,exhale:u.exhale,toneRequested:detectedToneOn&&soundOn,toneTime:detectedToneOn&&soundOn&&audioCtx?.state==='running'?performance.now():null});
+        if (detectedToneOn) tick(u.exhale);
       }
       lastTrackedT = t;
     }
@@ -623,20 +634,9 @@ function renderIntro() {
   const show = guided() && !running;
   $('guideIntro').hidden = !show;
   if (!show) return;
-  const key = $('patternSelect').value;
-  $('giPattern').textContent = patternNumbers(key);
-  $('giWords').textContent = PATTERN_WORDS[key] ?? '';
   $('giLine').textContent = mode() === 'guide'
-    ? 'Follow the line. No camera, nothing to set up.'
-    : 'It starts at your own pace and slows you to this pattern. The camera follows your breath if you allow it; without it, it simply guides.';
-  const chips = $('patternChips');
-  chips.replaceChildren(...Object.keys(PATTERNS).map((k) => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'gi-chip'; b.textContent = patternNumbers(k);
-    b.setAttribute('aria-pressed', String(k === key));
-    b.onclick = () => { $('patternSelect').value = k; $('patternSelect').onchange({ target: $('patternSelect') }); };
-    return b;
-  }));
+    ? 'Follow a fixed pattern. No camera needed.'
+    : 'Gradually slow toward your target. Camera tracking is optional.';
   drawPreview();
 }
 function drawPreview() {
@@ -646,7 +646,7 @@ function drawPreview() {
   if (overlay.width !== Math.round(sw * dpr) || overlay.height !== Math.round(sh * dpr)) { overlay.width = Math.round(sw * dpr); overlay.height = Math.round(sh * dpr); }
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
   octx.clearRect(0, 0, sw, sh);
-  const preview = new Coach(0, { pattern: PATTERNS[$('patternSelect').value], adaptive: false });
+  const preview = new Coach(0, { pattern: PATTERNS[selectedPattern], adaptive: false });
   preview.update(preview.full * 3);
   const top = sh * 0.18, floor = sh - $('controls').offsetHeight - 24, span = preview.full * 2.2;
   octx.beginPath();
@@ -663,7 +663,7 @@ new ResizeObserver(() => drawPreview()).observe($('stage'));
 // frames, so it keeps working with no camera at all.
 function updateCoachUi(t) {
   updateTrackingNotice(t, t - faceSeenAt < FACE_LOST_MS);
-  const now = t / 1000, d = coach.durations();
+  const now = (paused?pausedAt:t) / 1000, d = coach.durations();
   const one = (x) => String(Math.round(x * 10) / 10);
   $('coachPace').textContent = [d.in, d.top, d.out, d.bottom].filter((x, i) => i % 2 === 0 || x > 0.05).map(one).join(' · ');
   $('coachTime').textContent = fmtDuration(now - coach.t0);
@@ -836,11 +836,10 @@ function soundBlocked(blocked) {
 function setSound(on) {
   soundOn = on; debugEvent('master-sound',{on});
   try { localStorage.setItem('breathe.sound', on ? 'on' : 'off'); } catch { /* not remembered */ }
-  $('soundToggle').checked = on;
   const b = $('soundBtn');
-  b.setAttribute('aria-pressed', String(on));
+  b.dataset.muted = String(!on);
   b.classList.remove('blocked');
-  b.title = on ? 'Sound on · M to mute' : 'Sound off · M to turn on';
+  b.title = on ? 'Sound controls · sound on' : 'Sound controls · all sound muted';
   if (on && running) ensureAudio();
   syncQuickControls();
 }
@@ -848,8 +847,9 @@ function setSound(on) {
 // Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
   if (running && !paused) {
-    if (pendingPace && performance.now() >= pendingPace.at) { session.paceBpm = pendingPace.value; guideStart = pendingPace.at; pendingPace = null; lastGuideInhale = null; }
+    applyPendingControls();
     coach?.update(performance.now() / 1000);
+    applyPendingPattern();
     const guide = guidePhase();
     // A tone at the start of each breath in and each breath out; holds are silent.
     const stage = guide ? guide.phase ?? (guide.inhale ? 'in' : 'out') : null;
@@ -864,6 +864,7 @@ function setSound(on) {
 })();
 
 function setControls() {
+  if(!running){trackingRequest++;$('trackBtn').disabled=false;}
   document.body.classList.toggle("running", running);
   $('modeSelect').disabled = starting;
   document.body.classList.toggle('paused', paused);
@@ -875,7 +876,7 @@ function setControls() {
   const slot = $('camSlot');
   slot.hidden = !(running && mode() === 'coach' && $('camTileToggle').checked);
   slot.classList.toggle('off', !tracking);
-  $('camSlotText').textContent = coachNote.startsWith('No camera') ? 'No camera' : 'Tracking off';
+  $('camSlotText').textContent = !!cameraFailure ? 'No camera' : 'Tracking off';
   $('trackBtn').hidden = !(running && mode() === 'coach');
   $('trackBtn').textContent = tracking ? 'Tracking on' : 'Tracking off';
   $('trackBtn').setAttribute('aria-pressed', String(tracking));
@@ -891,13 +892,13 @@ function setControls() {
 async function start(continuation = false) {
   if (starting || running) return;
   localStorage.setItem('breathe.debug.notice','seen'); $('debugNotice').hidden=true;
-  respTrayOpen=false; starting=true; syncQuickControls();
+  closeSessionMenu(false); starting=true; syncQuickControls();
   if (!continuation && !continuedFrom) { groupId = crypto.randomUUID(); }
   cameraFailure = ''; trackingBadSince = trackingGoodSince = null;
   $('startBtn').disabled = true;
   hideToast();
   // Inside the tap, before any await: browsers only let audio start from a user gesture.
-  const wantsSound = $('ownSoundToggle').checked || guided() || (mode() !== 'guide' && Number($('paceSelect').value) > 0);
+  const wantsSound = detectedToneOn || guided() || (mode() !== 'guide' && Number(selectedPace) > 0);
   if (soundOn && wantsSound) ensureAudio();
   $('modeSelect').disabled = true;
   tracking = false; coachNote = '';
@@ -917,21 +918,22 @@ async function start(continuation = false) {
         return;
       }
       // The coach does not need the camera to be useful: carry on as a guide.
-      cameraFailure = cameraErrorText(err); coachNote = 'No camera: guide only.';
+      cameraFailure = cameraErrorText(err); coachNote = 'Camera off · following a schedule.';
     }
   }
   if (guided()) video.hidden = !tracking;
   pulse = chestOnly() ? null : new PulseSession(mode() === 'remote');
-  const pace = guided() ? null : Number($('paceSelect').value) || null;
-  coach = guided() ? new Coach(performance.now() / 1000, { pattern: PATTERNS[$('patternSelect').value] ?? PATTERNS['5-1-5-1'], adaptive: mode() === 'coach' }) : null; coachLastTurn = -Infinity; coachSeenAt = -Infinity;
+  const pace = guided() ? null : Number(selectedPace) || null;
+  activePattern = selectedPattern;
+  coach = guided() ? new Coach(performance.now() / 1000, { pattern: PATTERNS[selectedPattern] ?? PATTERNS['5-1-5-1'], adaptive: mode() === 'coach' }) : null; coachLastTurn = -Infinity; coachSeenAt = -Infinity;
   if (coach?.adaptive && !tracking) coach.setTracking(false, coach.t0);
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
   breathFeedback = new BreathFeedback();
-  sessionMode = mode(); sessionChanges = []; pendingPace = null;
+  sessionMode = mode(); sessionChanges = []; pendingPace = pendingPattern = null;
   running = true; paused = false;
   telemetryAt=-Infinity; telemetryFrameAt=null; motionBuffer=[];
   frameWindow={n:0,processing:0,interval:0,start:performance.now()};blurBudget=new BlurBudget(CSS.supports('backdrop-filter','blur(6px)')||CSS.supports('-webkit-backdrop-filter','blur(6px)'));document.body.classList.remove('resp-blur');
-  window.breatheDebug?.startSignals?.({version:VERSION,mode:mode(),pattern:$('patternSelect').value,pace:$('paceSelect').value,groupId,continuedFrom,browser:navigator.userAgent,camera:cameraTelemetry(),platform:navigator.platform,masterSound:soundOn,guideTone:guideToneOn,detectionTone:$('ownSoundToggle').checked});
+  window.breatheDebug?.startSignals?.({version:VERSION,mode:mode(),pattern:selectedPattern,pace:selectedPace,groupId,continuedFrom,browser:navigator.userAgent,camera:cameraTelemetry(),platform:navigator.platform,masterSound:soundOn,guideTone:guideToneOn,detectionTone:detectedToneOn});
   waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = sessionStartT = performance.now();
   steadySince = null; lastGuideInhale = null;
@@ -949,7 +951,7 @@ function stop(forceSave = false, keepCamera = false) {
   debugEvent('summary',{...session?.summary(),signal:undefined,mode:sessionMode,changes:sessionChanges});
   debugEvent('stop'); window.breatheDebug?.stop();
   const stoppedAt = paused ? pausedAt : performance.now();
-  running = false; paused = false;
+  running = false; paused = false; pendingPattern = pendingPace = null;
   setControls();
   showPhase(null, 0);
   releaseWakeLock();
@@ -962,7 +964,7 @@ function stop(forceSave = false, keepCamera = false) {
   if (coach) {
     // Keep what the guide did, and why, with the session so it can be reviewed later.
     const guidedS = stoppedAt / 1000 - coach.t0;
-    summary.coach = { mode: coach.adaptive ? 'coach' : 'guide', pattern: $('patternSelect').value, caught: coach.caught,
+    summary.coach = { mode: coach.adaptive ? 'coach' : 'guide', pattern: activePattern, caught: coach.caught,
       firstBpm: coach.firstBpm, endCycle: coach.cycle, fullCycle: coach.full, breaths: coach.breathCount, log: coach.log };
     summary.durationS = Math.max(summary.durationS, guidedS);
     if (!coach.caught) summary.breaths = coach.breathCount;
@@ -1087,12 +1089,12 @@ function showSummary(s) {
 // One plain sentence about a guided session, and its log as readable lines.
 function describeCoach(c) {
   const per = (cycle) => (60 / cycle).toFixed(1);
-  if (c.mode === 'guide') return `Guide: ${c.pattern}, ${c.breaths} breaths. No tracking.`;
+  if (c.mode === 'guide') return `Fixed breathing: ${c.pattern}, ${c.breaths} breaths. No tracking.`;
   const start = c.log.find((e) => e.ev === 'catch')?.cycle ?? c.log[0]?.cycle ?? c.endCycle;
   const end = c.endCycle >= c.fullCycle - 1e-6 ? `reached the full ${c.pattern} pattern (${per(c.fullCycle)}/min)` : `got to ${per(c.endCycle)}/min on the way to ${c.pattern}`;
   return c.caught
-    ? `Coach: caught you at about ${c.firstBpm.toFixed(1)}/min, started the guide at ${per(start)}/min and ${end}.`
-    : `Coach without tracking: started the guide at ${per(start)}/min and ${end}.`;
+    ? `Adaptive breathing: caught you at about ${c.firstBpm.toFixed(1)}/min, started the guide at ${per(start)}/min and ${end}.`
+    : `Adaptive breathing without tracking: started the guide at ${per(start)}/min and ${end}.`;
 }
 const COACH_EVENT = { start: 'start', catch: 'caught your pace', step: 'longer breath', 'step-after-wait': 'longer breath (after waiting)',
   hold: 'waiting for you', 'slower-catch': 'you slowed past it: followed', arrive: 'full pattern reached', 'lead-untracked': 'leading without tracking',
@@ -1174,9 +1176,9 @@ function renderHistory() {
   for (const s of all) {
     const li = document.createElement('li');
     const left = document.createElement('span');
-    left.textContent = `${new Date(s.startedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${fmtDuration(s.durationS)}${s.continuedFrom?' · continued from '+s.continuedFrom:''}`;
+    left.textContent = `${new Date(s.startedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${fmtDuration(s.durationS)} · ${modeName(s.mode??s.coach?.mode??'respiration')}${s.continuedFrom?' · continued from '+modeName(s.continuedFrom):''}`;
     const right = document.createElement('strong');
-    right.textContent = s.avgBpm ? `${s.avgBpm.toFixed(1)}/min` : s.coach ? `${s.coach.mode} ${s.coach.pattern}` : '--';
+    right.textContent = s.avgBpm ? `${s.avgBpm.toFixed(1)}/min` : s.coach ? `${modeName(s.coach.mode)} ${PATTERN_NAMES[s.coach.pattern]?.short??s.coach.pattern}` : '--';
     li.append(left, right);
     li.tabIndex = 0;
     li.onclick = () => { closeSheet($('historySheet')); showSummary(s); };
@@ -1192,7 +1194,7 @@ $('stopBtn').onclick = () => { stop(); continuedFrom=null; };
 $('pauseBtn').onclick = () => {
   const now = performance.now();
   if (!paused) { paused = true; pausedAt = now; }
-  else { const gap = (now - pausedAt) / 1000; coach?.shiftTime(gap); guideStart += gap * 1000; sessionStartT += gap * 1000; paused = false; }
+  else { const gap = (now - pausedAt) / 1000; coach?.shiftTime(gap); guideStart += gap * 1000; sessionStartT += gap * 1000; if(pendingPace)pendingPace.at+=gap*1000; if(pendingPattern)pendingPattern.requestedAt+=gap; paused = false; }
   frameWindow={n:0,processing:0,interval:0,start:now};
   sessionChanges.push({t:(now-sessionStartT)/1000,event:paused?'pause':'resume'}); debugEvent(paused?'pause':'resume');
   pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls();
@@ -1202,11 +1204,14 @@ $('historyBtn').onclick = () => { renderHistory(); openSheet('historySheet'); };
 
 // Sheets (settings, summary): close with the X, Done/Close, Esc, a tap outside,
 // or a swipe down from the top of the sheet. The header stays put while the body scrolls.
-let sheetReturnFocus = null;
+const sheetReturnFocus = new WeakMap();
+const sheetStack = [];
 function openSheet(id) {
   const el = $(id), body = el.querySelector('.sheet-body');
   if (!el.hidden) return;
-  sheetReturnFocus = document.activeElement;
+  closeSessionMenu(false);
+  sheetReturnFocus.set(el,document.activeElement);
+  sheetStack.push(el);
   el.hidden = false; body.scrollTop = 0; body.style.transform = '';
   el.querySelector('.sheet-close').focus({ preventScroll: true });
   setTitle();
@@ -1216,7 +1221,8 @@ function closeSheet(el) {
   el.hidden = true;
   el.querySelector('.sheet-body').style.transform = '';
   setTitle();
-  if (![...document.querySelectorAll('.sheet')].some((x) => !x.hidden)) sheetReturnFocus?.focus?.({ preventScroll: true });
+  sheetStack.splice(sheetStack.indexOf(el),1);
+  sheetReturnFocus.get(el)?.focus?.({preventScroll:true});
 }
 for (const el of document.querySelectorAll('.sheet')) {
   const body = el.querySelector('.sheet-body');
@@ -1237,19 +1243,21 @@ for (const el of document.querySelectorAll('.sheet')) {
 }
 $('stDetails').onclick = () => { hideToast(); if (lastSummary) showSummary(lastSummary); };
 $('stClose').onclick = hideToast;
-$('soundBtn').onclick = () => {
-  // On but held back by the browser: this tap is what lets it play, so don't switch it off.
-  if (soundOn && $('soundBtn').classList.contains('blocked')) { ensureAudio(); return; }
-  setSound(!soundOn);
-};
-$('soundToggle').onchange = (e) => setSound(e.target.checked);
+$('soundBtn').onclick = () => { syncSoundPanel(); openSheet('soundSheet'); };
+$('soundSettingsLink').onclick = () => { syncSoundPanel(); openSheet('soundSheet'); };
+$('masterSoundControl').onclick = () => setSound(!soundOn);
+$('guideSoundControl').onclick = () => { guideToneOn=!guideToneOn; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); if(guideToneOn&&soundOn)ensureAudio(); syncSoundPanel(); };
+$('detectedSoundControl').onclick = () => { detectedToneOn=!detectedToneOn; localStorage.setItem('breathe.ownSound',detectedToneOn?'on':'off'); debugEvent('detection-tone',{on:detectedToneOn}); if(detectedToneOn&&soundOn)ensureAudio(); syncSoundPanel(); };
+$('sessionControlsLink').onclick = () => { closeSheet($('historySheet')); const button=guided()?$('quickPattern'):$('quickPace'); button.focus(); openSessionMenu(button); };
+$('debugSettingsLink').onclick = () => $('debugPanel').scrollIntoView({block:'start'});
 setSound(soundOn);
 // Any tap during a session can unlock sound that was blocked (iOS also suspends it in the background).
 document.addEventListener('pointerdown', () => { if (running && soundOn && audioCtx?.state !== 'running') ensureAudio(); }, true);
 document.addEventListener('keydown', (e) => {
-  if(e.key==='Escape'&&mode()==='respiration'&&respTrayOpen){respTrayOpen=false;renderRespirationLayout();$('respTuneBtn').focus();e.preventDefault();return;}
+  if(e.key==='Escape'&&!$('sessionMenu').hidden){closeSessionMenu();e.preventDefault();return;}
+  if(e.key==='Tab'&&sheetStack.length){const sheet=sheetStack.at(-1);const items=[...sheet.querySelectorAll('button,input,select,a[href],[tabindex="0"]')].filter(x=>!x.disabled&&x.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&(document.activeElement===first||!sheet.contains(document.activeElement))){e.preventDefault();last?.focus();}else if(!e.shiftKey&&(document.activeElement===last||!sheet.contains(document.activeElement))){e.preventDefault();first?.focus();}}
   if (e.key === 'Escape') {
-    const open = [...document.querySelectorAll('.sheet')].filter((x) => !x.hidden).at(-1);
+    const open = sheetStack.at(-1);
     if (open) { e.preventDefault(); closeSheet(open); } else if (!$('sumToast').hidden) hideToast();
     return;
   }
@@ -1262,16 +1270,10 @@ $('clearBtn').onclick = () => {
   if (confirm('Delete all saved sessions on this device?')) { localStorage.removeItem(STORE_KEY); renderHistory(); }
 };
 $('clipBtn').onclick = exportClip;
-$('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
-$('paceSelect').onchange = () => changePace($('paceSelect').value);
 $('camTileToggle').checked = localStorage.getItem('breathe.camTile') !== 'off';
 $('camTileToggle').onchange = (e) => { localStorage.setItem('breathe.camTile', e.target.checked ? 'on' : 'off'); setControls(); };
-$('ownSoundToggle').checked = localStorage.getItem('breathe.ownSound') === 'on';
-$('ownSoundToggle').onchange = () => { localStorage.setItem('breathe.ownSound', $('ownSoundToggle').checked ? 'on' : 'off'); debugEvent('detection-tone',{on:$('ownSoundToggle').checked}); if ($('ownSoundToggle').checked && soundOn) ensureAudio(); syncQuickControls(); };
 $('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
 $('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
-$('patternSelect').value = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
-$('patternSelect').onchange = () => changePattern($('patternSelect').value);
 $('coachSelect').value = localStorage.getItem('breathe.coachView') ?? 'path';
 $('coachSelect').onchange = (e) => localStorage.setItem('breathe.coachView', e.target.value);
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
@@ -1303,9 +1305,9 @@ setInterval(checkForUpdate, 10 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkForUpdate(); });
 
 // Test hook for automated end-to-end checks.
-window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, get tracking() { return tracking; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
+window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, get tracking() { return tracking; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; }, get controls() { return {running,paused,groupId,continuedFrom,activePattern,selectedPattern,selectedPace,pendingPattern:pendingPattern&&{...pendingPattern},pendingPace:pendingPace&&{...pendingPace},guide:guidePhase(),soundOn,guideToneOn,detectedToneOn}; } };
 
-$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';if(!preserveCameraForMode)stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').hidden=mode()!=='respiration';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';if(!preserveCameraForMode)stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').hidden=mode()!=='respiration';setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
@@ -1313,13 +1315,17 @@ function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pul
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
 
 const modeChanged = $('modeSelect').onchange;
+let displayedMode = null;
 $('modeSelect').onchange = async () => {
-  respTrayOpen=false;
-  if(starting){$('modeSelect').value=sessionMode??'coach';return;}
+  closeSessionMenu(false);
+  if(starting){$('modeSelect').value=displayedMode??'coach';return;}
+  if(mode()===displayedMode)return;
   const next = mode(), oldMode = sessionMode, wasRunning = running, resume = running && !paused;
-  preserveCameraForMode=wasRunning&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next);
+  preserveCameraForMode=resume&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next)&&(next==='respiration'||facing==='user');
   if (wasRunning) { debugEvent('mode-change',{from:oldMode,to:next,paused}); stop(true,preserveCameraForMode); announceChange('Session saved. Switching to '+$('modeSelect').selectedOptions[0].text+'.'); }
-  modeChanged(); preserveCameraForMode=false; hideToast(); renderIntro(); syncQuickControls();
+  cameraFailure='';trackingBadSince=trackingGoodSince=null;$('trackingNotice').hidden=true;document.body.classList.remove('tracking-blocked');
+  if(!chestOnly()&&localStorage.getItem('breathe.pace')===null)selectedPace='6';
+  modeChanged(); displayedMode=next; preserveCameraForMode=false; hideToast(); renderIntro(); syncQuickControls();
   if (wasRunning) continuedFrom = oldMode;
   if (resume) await start(true);
 };
@@ -1328,19 +1334,13 @@ $('modeSelect').onchange = async () => {
 function renderRespirationLayout() {
   const resp=mode()==='respiration';
   document.body.classList.toggle('respiration',resp);document.body.classList.toggle('chart-focus',resp&&chartFocus);
-  document.body.classList.toggle('resp-tray-open',resp&&respTrayOpen);
   for(const {el,anchor} of respAnchors){if(resp){const target=el.matches('section.stats')?document.querySelector('.card'):$('stage');if(el.parentElement!==target)target.append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
   if(chartFocus||!resp)$('respTrace').style.height='';
   if(!resp){video.style.objectFit='';video.style.objectPosition='';lastObjectPosition='';}
-  $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;$('respTuneBtn').hidden=!resp||!running;
+  $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;
   $('chartFocusBtn').setAttribute('aria-pressed',String(chartFocus));$('chartFocusBtn').textContent=chartFocus?'Camera':'Chart focus';
-  $('respTuneBtn').setAttribute('aria-expanded',String(respTrayOpen));
-  $('quickControls').inert=resp&&running&&!respTrayOpen;
-  $('respTuneBtn').classList.toggle('has-tone',guideToneOn||$('ownSoundToggle').checked);
 }
 $('chartFocusBtn').onclick=()=>{chartFocus=!chartFocus;localStorage.setItem('breathe.layout.respiration.v1',chartFocus?'chart':'camera');debugEvent('layout',{mode:'respiration',layout:chartFocus?'chart':'camera'});renderRespirationLayout();drawRespirationOverlay(performance.now()-faceSeenAt<FACE_LOST_MS);};
-$('respTuneBtn').onclick=()=>{respTrayOpen=!respTrayOpen;renderRespirationLayout();};
-document.addEventListener('pointerdown',e=>{if(mode()==='respiration'&&respTrayOpen&&!e.target.closest('#respTuneBtn,#quickControls')){respTrayOpen=false;renderRespirationLayout();}});
 function drawRespirationOverlay(faceOk) {
   const dpr=window.devicePixelRatio||1,sw=overlay.clientWidth,sh=overlay.clientHeight;
   if(overlay.width!==Math.round(sw*dpr)||overlay.height!==Math.round(sh*dpr)){overlay.width=Math.round(sw*dpr);overlay.height=Math.round(sh*dpr);}
@@ -1381,7 +1381,7 @@ function cameraTelemetry() {
 window.addEventListener('error', e => debugEvent('error',{message:e.message}));
 window.addEventListener('unhandledrejection', e => debugEvent('error',{message:String(e.reason?.message??e.reason)}));
 document.addEventListener('visibilitychange',()=>debugEvent('visibility',{state:document.visibilityState}));
-setInterval(()=>{if(running) debugEvent('guide-state',{paused,tracking,mode:mode(),pattern:$('patternSelect').value,phase:coach?.phase(performance.now()/1000)??null,cycle:coach?.cycle??null,rate:session?.currentRate(),coachLog:coach?.log.slice(-2),camera:cameraTelemetry()});},500);
+setInterval(()=>{if(running) debugEvent('guide-state',{paused,tracking,mode:mode(),pattern:activePattern,targetPattern:selectedPattern,phase:coach?.phase((paused?pausedAt:performance.now())/1000)??null,cycle:coach?.cycle??null,rate:session?.currentRate(),coachLog:coach?.log.slice(-2),camera:cameraTelemetry()});},500);
 
 function updateTrackingNotice(t, faceOk) {
   const el = $('trackingNotice');
@@ -1394,7 +1394,7 @@ function updateTrackingNotice(t, faceOk) {
     else if (!chest || chestHidden) { title = 'Chest not in view'; fix = 'Move the phone back until your upper chest is visible.'; }
     else if (t < motionUntil) { title = 'Hold still'; fix = 'Prop the phone up and relax your shoulders.'; }
   }
-  if (cameraFailure && mode() !== 'guide') { title = needs ? 'Camera unavailable' : 'No camera · guiding on schedule'; fix = needs ? 'The camera is unavailable. Check camera access or use Guide to continue without one.' : ''; }
+  if (cameraFailure && mode() !== 'guide') { title = needs ? 'Camera unavailable' : 'Camera off · following a schedule'; fix = needs ? 'The camera is unavailable. Check camera access or use Fixed breathing to continue without one.' : ''; }
   if (title) { trackingBadSince ??= t; trackingGoodSince = null; }
   else { trackingGoodSince ??= t; if (t-trackingGoodSince < RECOVER_MS && !el.hidden && running && !paused) return; trackingBadSince = null; }
   const visible = !!title && (cameraFailure || t-trackingBadSince >= 1000);
@@ -1413,59 +1413,103 @@ function announceChange(text, undo = null) {
 }
 $('useGuideBtn').onclick=()=>{if(starting)return;$('modeSelect').value='guide';$('modeSelect').onchange();};
 $('undoChange').onclick = () => { const f = undoAction; undoAction = null; f?.(); $('switchNotice').hidden = true; };
+function applyPendingControls() {
+  if(!pendingPace||performance.now()<pendingPace.at)return;
+  session.paceBpm=pendingPace.value; guideStart=pendingPace.at; pendingPace=null; lastGuideInhale=null;
+  debugEvent('pace-applied',{value:session.paceBpm}); syncQuickControls();
+}
+function applyPendingPattern() {
+  if(!pendingPattern||!coach)return;
+  const seg=coach.seg(performance.now()/1000);
+  if(seg.kind!=='in'||seg.from!==0||seg.to!==1||seg.t0<=pendingPattern.requestedAt)return;
+  coach.applyPatternAtBoundary(PATTERNS[pendingPattern.value],seg.t0);
+  activePattern=pendingPattern.value; pendingPattern=null;
+  debugEvent('pattern-applied',{value:activePattern,signalTime:seg.t0}); syncQuickControls();
+}
 function changePace(value, undo = true) {
-  const prev = localStorage.getItem('breathe.pace') ?? '0';
-  $('paceSelect').value = value; localStorage.setItem('breathe.pace', value);
-  if (running && !coach) {
-    const now = performance.now(), cycle = session.paceBpm ? 60000/session.paceBpm : 0;
-    const at = cycle && !paused ? guideStart + (Math.floor((now-guideStart)/cycle)+1)*cycle : now;
-    pendingPace = {value:Number(value)||null, at};
-    if (paused) { session.paceBpm = pendingPace.value; pendingPace = null; guideStart = pausedAt; }
-    sessionChanges.push({event:'pace-change',value,t:(now-sessionStartT)/1000}); debugEvent('pace-change',{value});
-    announceChange('Guide pace '+(Number(value)?value+'/min':'off')+' from the next breath.', undo?()=>changePace(prev,false):null);
+  if(!PACES.includes(value))return;
+  const prev=selectedPace; selectedPace=value; localStorage.setItem('breathe.pace',value);
+  if(running&&!coach){
+    const now=paused?pausedAt:performance.now(), target=Number(value)||null;
+    pendingPace=target===session.paceBpm?null:{value:target,at:nextPaceBoundary(now,guideStart,session.paceBpm)};
+    sessionChanges.push({event:'pace-change',value,t:(now-sessionStartT)/1000}); debugEvent('pace-change',{value,pending:!!pendingPace,undo:!undo});
+    announceChange(pendingPace?'Guide pace '+(target?value+'/min':'Off')+' from the next breath.':'Pending pace change cancelled.',undo?()=>changePace(prev,false):null);
   }
   syncQuickControls();
 }
 function changePattern(value, undo = true) {
-  const prev = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
-  $('patternSelect').value = value; localStorage.setItem('breathe.pattern',value);
-  if (coach && running) {
-    coach.setPattern(PATTERNS[value], (paused?pausedAt:performance.now())/1000);
-    sessionChanges.push({event:'pattern-change',value,t:(performance.now()-sessionStartT)/1000}); debugEvent('pattern-change',{value});
-    announceChange('Pattern changes after this breath out.', undo?()=>changePattern(prev,false):null);
+  if(!Object.hasOwn(PATTERNS,value))return;
+  const prev=selectedPattern; selectedPattern=value; localStorage.setItem('breathe.pattern',value);
+  if(coach&&running){
+    const now=(paused?pausedAt:performance.now())/1000;
+    pendingPattern=value===activePattern?null:{value,requestedAt:now};
+    sessionChanges.push({event:'pattern-change',value,t:now-sessionStartT/1000}); debugEvent('pattern-change',{value,pending:!!pendingPattern,undo:!undo});
+    announceChange(pendingPattern?PATTERN_NAMES[value].short+' from the next breath · '+(paused?'after Resume.':'target selected.'):'Pending pattern change cancelled.',undo?()=>changePattern(prev,false):null);
+  } else {activePattern=value;if(guided())setStatus(idleText());}
+  renderIntro();syncQuickControls();
+}
+function syncSoundPanel(){
+  const guideReason=!guided()&&Number(selectedPace)===0?'Unavailable while guide pace is Off.':'';
+  const detectedReason=mode()==='guide'?'Unavailable in Fixed breathing (no tracking).':mode()==='finger'?'Unavailable with fingertip heart tracking.':(mode()==='coach'&&running&&!tracking)||cameraFailure?'Unavailable while camera tracking is off.':'A short tick for measured inhale (higher) and exhale (lower).';
+  $('allMuted').hidden=soundOn;
+  for(const [id,on,label]of [['masterSoundControl',soundOn,'All sound'],['guideSoundControl',guideToneOn,'Guide tone'],['detectedSoundControl',detectedToneOn,'Detected breath tone']]){
+    $(id).setAttribute('aria-checked',String(on));$(id).textContent=label+': '+(on?'On':id==='masterSoundControl'?'Muted':'Off');
   }
-  if (!running && guided()) setStatus(idleText());
-  renderIntro(); syncQuickControls();
+  $('guideSoundControl').disabled=!!guideReason;
+  $('detectedSoundControl').disabled=detectedReason.startsWith('Unavailable');
+  $('guideSoundReason').textContent=guideReason||'Soft tones at each guided inhale and exhale.';
+  $('detectedSoundReason').textContent=detectedReason;
 }
-function syncQuickControls() {
-  renderRespirationLayout();
-  $('coherenceChoice').disabled=starting;
-  $('coherenceChoiceLabel').hidden=chestOnly(); $('coherenceChoice').value=chestOnly()?'finger':mode();
-  $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided()||!running;
-  $('quickPace').value = $('paceSelect').value; $('quickPattern').value = $('patternSelect').value;
-  $('guideToneBtn').setAttribute('aria-pressed',String(guideToneOn)); $('guideToneToggle').checked=guideToneOn;
-  $('guideToneBtn').textContent='Guide tone'; $('detectionToneBtn').textContent='Detection tone';
-  for(const id of ['guideToneBtn','detectionToneBtn']){$(id).classList.toggle('master-muted',!soundOn);$(id).title=!soundOn?'Master sound muted; preference preserved':'Toggle '+$(id).textContent.toLowerCase();}
-  $('guideToneBtn').disabled = !guided() && Number($('paceSelect').value) === 0;
-  $('detectionToneBtn').hidden = mode()==='guide';
-  $('detectionToneBtn').setAttribute('aria-pressed',String($('ownSoundToggle').checked));
+function syncQuickControls(){
+  renderRespirationLayout();syncSoundPanel();
+  $('quickPattern').hidden=!guided();$('quickPace').hidden=guided();
+  $('quickPattern').textContent='Pattern · '+PATTERN_NAMES[selectedPattern].short+' ▾';
+  $('quickPattern').setAttribute('aria-label','Breathing pattern: '+PATTERN_NAMES[selectedPattern].full+(pendingPattern?'. Pending until the next breath.':''));
+  $('quickPace').textContent='Pace · '+(Number(selectedPace)?selectedPace+'/min':'Off')+' ▾';
+  $('quickPace').setAttribute('aria-label','Guide pace: '+(Number(selectedPace)?selectedPace+' breaths per minute':'Off')+(pendingPace?'. Pending until the next breath.':''));
+  $('pendingControl').hidden=!(pendingPattern||pendingPace);
+  $('pendingControl').textContent=(pendingPattern||pendingPace)?'Target pending · next breath'+(paused?' after Resume':''):'';
   $('modeSelect').disabled=starting;
-  for (const b of $('modeTabs').children) { b.disabled=starting; b.setAttribute('aria-pressed', String(b.dataset.mode === mode()||(b.dataset.mode==='finger'&&!chestOnly()))); }
-  if (!running && !cameraFailure) { $('trackingNotice').hidden = true; document.body.classList.remove('tracking-blocked'); }
+  $('coachSelect').closest('label').hidden=!guided();
+  $('camTileToggle').closest('label').hidden=mode()!=='coach';
+  $('lineSelect').closest('label').hidden=mode()==='guide'||mode()==='finger';
+  $('lineSelect').closest('label').nextElementSibling.hidden=mode()==='guide'||mode()==='finger';
+  $('recordToggle').closest('label').hidden=mode()==='guide';
+  if(!running&&!cameraFailure){$('trackingNotice').hidden=true;document.body.classList.remove('tracking-blocked');}
 }
-for (const [quick,original] of [['quickPace','paceSelect'],['quickPattern','patternSelect']]) $(''+quick).innerHTML = $(original).innerHTML;
-$('coherenceChoice').onchange=e=>{if(starting)return;$('modeSelect').value=e.target.value;$('modeSelect').onchange();};
-$('quickPace').onchange = e => changePace(e.target.value);
-for(const o of $('quickPattern').options)o.text=o.value==='5-1-5-1'?'5·1·5·1':o.value==='5-0-5'?'5·5':'4·7·8';
-for(const o of $('quickPace').options)o.text=Number(o.value)?o.value+'/min':'Off';
-$('quickPattern').onchange = e => changePattern(e.target.value);
-$('guideToneBtn').onclick = () => { guideToneOn = !guideToneOn; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); if (guideToneOn && soundOn) ensureAudio(); syncQuickControls(); };
-$('detectionToneBtn').onclick = () => { $('ownSoundToggle').checked = !$('ownSoundToggle').checked; $('ownSoundToggle').onchange(); };
-for (const o of $('modeSelect').options) {
-  if(['remote','dual'].includes(o.value))continue;
-  const b = document.createElement('button'); b.type='button'; b.textContent=o.value==='guide'?'Guide':o.value==='finger'?'Coherence':o.text; b.dataset.mode=o.value;
-  b.onclick=()=>{ b.scrollIntoView({block:'nearest',inline:'nearest'}); if (mode() === o.value) return; $('modeSelect').value=o.value; $('modeSelect').onchange(); }; $('modeTabs').append(b);
+let menuButton=null;
+function closeSessionMenu(restore=true){
+  if($('sessionMenu').hidden)return;
+  $('sessionMenu').hidden=true;menuButton?.setAttribute('aria-expanded','false');
+  if(restore)menuButton?.focus({preventScroll:true});
 }
+function openSessionMenu(button){
+  if(!$('sessionMenu').hidden&&menuButton===button){closeSessionMenu();return;}
+  closeSessionMenu(false);menuButton=button;
+  const pattern=button.id==='quickPattern',value=pattern?selectedPattern:selectedPace,menu=$('sessionMenu');
+  menu.replaceChildren();menu.setAttribute('aria-label',pattern?'Breathing pattern':'Guide pace');
+  for(const key of pattern?Object.keys(PATTERN_NAMES):PACES){
+    const b=document.createElement('button');b.type='button';b.role='menuitemradio';b.tabIndex=-1;b.setAttribute('aria-checked',String(key===value));
+    b.textContent=pattern?PATTERN_NAMES[key].full:Number(key)?key+' breaths per minute':'Off';
+    b.onclick=()=>{pattern?changePattern(key):changePace(key);closeSessionMenu();};menu.append(b);
+  }
+  menu.hidden=false;button.setAttribute('aria-expanded','true');
+  const rect=button.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(innerWidth-menu.offsetWidth-8,rect.left))+'px';menu.style.bottom=(innerHeight-rect.top+8)+'px';
+  menu.querySelector('[aria-checked="true"]').focus();
+}
+for(const id of ['quickPattern','quickPace']){
+  $(id).onclick=()=>openSessionMenu($(id));
+  $(id).onkeydown=e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();openSessionMenu($(id));}};
+}
+$('sessionMenu').onkeydown=e=>{
+  const items=[...$('sessionMenu').children],i=items.indexOf(document.activeElement);
+  const next=e.key==='ArrowDown'?(i+1)%items.length:e.key==='ArrowUp'?(i-1+items.length)%items.length:e.key==='Home'?0:e.key==='End'?items.length-1:null;
+  if(next!==null){e.preventDefault();items[next].focus();}
+  if(e.key==='Tab'){closeSessionMenu();}
+  if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){const ordered=[...items.slice(i+1),...items.slice(0,i+1)],match=ordered.find(b=>b.textContent.toLowerCase().startsWith(e.key.toLowerCase()));if(match){e.preventDefault();match.focus();}}
+};
+document.addEventListener('pointerdown',e=>{if(!$('sessionMenu').hidden&&!e.target.closest('#sessionMenu,#quickPattern,#quickPace'))closeSessionMenu();});
+window.addEventListener('resize',()=>closeSessionMenu());
 
 // Open in the mode used last time; the coach by default.
 {
@@ -1477,18 +1521,20 @@ for (const o of $('modeSelect').options) {
 // Tracking on/off during a coach session. Off releases the camera and carries on as a guide.
 $('trackBtn').onclick = async () => {
   if (!coach || !running) return;
-  const now = performance.now() / 1000;
+  const now = performance.now() / 1000, trackerCoach=coach, request=++trackingRequest;
   if (tracking) {
     tracking = false; stopCamera(); video.hidden = true;   // the slot stays; only its picture goes
-    coach.setTracking(false, now); coachNote = 'Tracking off: guide only.';
+    coach.setTracking(false, now); coachNote = 'Camera off · following a schedule.';
   } else {
     $('trackBtn').disabled = true;
     try {
       await startCamera(); await loadDetector();
+      if(coach!==trackerCoach||mode()!=='coach'||!running)return;
+      cameraFailure='';trackingBadSince=trackingGoodSince=null;
       tracking = true; video.hidden = false; coachNote = ''; coachLastTurn = session.displayT;
       coach.setTracking(true, now);
-    } catch { stopCamera(); coachNote = 'No camera: guide only.'; }
-    $('trackBtn').disabled = false;
+    } catch(err) { if(coach!==trackerCoach||mode()!=='coach'||!running)return; stopCamera(); cameraFailure=cameraErrorText(err); coachNote = 'Camera off · following a schedule.'; }
+    finally { if(request===trackingRequest&&coach===trackerCoach)$('trackBtn').disabled = false; }
   }
   setControls();
 };

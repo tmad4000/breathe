@@ -14,8 +14,8 @@ try {
   await page.addInitScript(() => { window.__gum = 0; const md = navigator.mediaDevices; if (md) { const real = md.getUserMedia?.bind(md); md.getUserMedia = (...a) => { window.__gum++; return real ? real(...a) : Promise.reject(new Error('none')); }; } });
   await page.goto(base);
   await page.selectOption('#modeSelect', 'guide');
-  assert.equal(await page.title(), 'Guide (no camera) — Breathe');
-  assert.match(await page.locator('#status').textContent(), /no camera: 5 in/);
+  assert.equal(await page.title(), 'Fixed breathing — Breathe');
+  assert.match(await page.locator('#status').textContent(), /No camera needed/);
   await page.click('#startBtn');
   await page.waitForTimeout(4500);
   let s = await state(page);
@@ -27,7 +27,7 @@ try {
   await page.waitForTimeout(7000);
   await page.click('#stopBtn');
   await page.click('#stDetails');
-  assert.match(await page.locator('#sumPace').textContent(), /^Guide: 5-1-5-1/);
+  assert.match(await page.locator('#sumPace').textContent(), /^Fixed breathing: 5-1-5-1/);
   assert.match(await page.locator('#coachLog').textContent(), /start/);
   assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('breathe.sessions.v1'))[0].coach.mode === 'guide'));
   await page.close();
@@ -48,7 +48,7 @@ try {
   if (shots) await page.screenshot({ path: `${shots}/coach-no-camera.png` });
   await page.click('#stopBtn');
   await page.click('#stDetails');
-  assert.match(await page.locator('#sumPace').textContent(), /^Coach without tracking/);
+  assert.match(await page.locator('#sumPace').textContent(), /^Adaptive breathing without tracking/);
   await page.close();
 
   // 3. Coach on a breathing clip: it catches the pace, never runs faster than 10/min,
@@ -56,6 +56,7 @@ try {
   page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${base}?coach&src=${encodeURIComponent(clip)}`);
+  if(await page.locator('#startBtn').isVisible())await page.click('#startBtn');
   await page.waitForFunction(() => window.__breathe.coach?.caught, {}, { timeout: 45000 });
   s = await state(page);
   assert.ok(s.cycle >= 6 - 1e-9, `guide cycle ${s.cycle} s is faster than 10/min`);

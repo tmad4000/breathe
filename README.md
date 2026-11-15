@@ -6,6 +6,26 @@ A web app that works like Google Fit's camera respiratory-rate check, but
 **Use it:** https://jacobcole.ai/breathe/ — open in Safari on an iPhone
 (or any phone browser), allow the camera, then Share → Add to Home Screen.
 
+## Current session controls (v0.14.0)
+
+The top menu stays in the same place before, during and after a pause:
+**Adaptive breathing**, **Fixed breathing**, **Respiration Tracker**,
+**Coherence · fingertip**, and **Coherence · hands-free**. Adaptive breathing
+slows gradually toward a target; without camera tracking it follows a schedule.
+Fixed breathing follows the selected timing and never requests a camera.
+Existing `?coach` / `?guide` links and saved mode IDs remain compatible.
+
+One current-value **Pattern** or **Pace** button above Start/Pause/Resume opens
+the choices without moving the view. Changes wait for the next breath boundary,
+including after Resume, with five seconds to Undo. The speaker opens **Sound**:
+master mute, guide tone and detected breath ticks. M still mutes globally;
+muting preserves each tone preference and does not alter guide timing.
+Settings links open these same controls. The tiny debug indicator opens local
+recording details; recording continues to log events while a session is paused.
+
+The design handoff is [DECISION.md](https://github.com/tmad4000/breathe/blob/main/docs/design/stable-session-controls.md).
+The older version notes below describe earlier releases, not the current UI.
+
 ## How it works
 
 Same idea as Google's: the front camera follows the small rise and fall of your
@@ -36,7 +56,7 @@ chest (optical flow). Everything runs on the phone; no video leaves the device. 
    and returns only after 5 s of steady tracking. Every 10 s the rate is logged
    to a trend.
 
-**Checking accuracy:** Settings (gear, top left) → Breathing guide. Follow the ring
+**Checking accuracy:** choose Guide pace from the Pace button above Start. Follow the ring
 in and out at a known pace (e.g. 10/min); soft tones mark each breath in and
 out, so you can follow it without watching. The measured rate should match.
 Turn on "Record the first 2 minutes" to save a clip you can share for tuning,
