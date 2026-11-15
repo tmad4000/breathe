@@ -1,1 +1,9 @@
-{"name":"breathe-tracker","version":"0.11.0","private":true,"type":"module","scripts":{"test":"node --test test/*.test.mjs"}}
+{
+  "name": "breathe-tracker",
+  "version": "0.12.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

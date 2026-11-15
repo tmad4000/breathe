@@ -9,7 +9,7 @@ A web app that works like Google Fit's camera respiratory-rate check, but
 ## How it works
 
 Same idea as Google's: the front camera follows the small rise and fall of your
-chest (optical flow). Everything runs on the phone; no video leaves the device.
+chest (optical flow). Everything runs on the phone; no video leaves the device. During debugging, derived breathing signals and app events save automatically in this browser (no video or audio); the visible Debug control turns this off and opens local review, export and deletion. Nothing is uploaded. Debug history lasts 14 days or up to 100 MB; Keep exempts age only.
 
 1. **Find you:** MediaPipe face detector (`@mediapipe/tasks-vision` 1.0.1,
    vendored in `vendor/`, BlazeFace short-range model in `models/`) finds your
@@ -167,8 +167,7 @@ node test/ux-e2e.mjs                             # sound switch, stop card, shee
 
 Browser tests use the global `playwright` and installed Chrome by default.
 Elsewhere, set `PLAYWRIGHT_MODULE=/path/to/node_modules/playwright-core` and
-`BROWSER_PATH=/path/to/chrome`. `BROWSER_NO_SANDBOX=1` adds `--no-sandbox` for
-hosts that need it.
+`BROWSER_PATH=/path/to/chrome`. Browser tests require the Chromium sandbox; they reject `--no-sandbox`.
 
 `?src=clip.mp4` replaces the camera with a looping video file, which is useful
 for end-to-end tests and for analyzing recorded clips. Chrome's fake camera
@@ -217,3 +216,15 @@ Status: the page side is tested. The Swift has only been syntax-checked, never
 compiled against the iOS SDK or run on a phone. To verify on a device: torch
 works while both cameras run, the fingertip colour is not clipped, frame rate
 holds near 30, and the phone does not get hot.
+
+## v0.12.0: debugging and accuracy controls
+
+Respiration Tracker has on-screen guide pace, guide-tone mute and detected
+inhale/exhale ticks. The top speaker remains master mute. Pattern and pace
+changes keep the session and apply after the current breath, with Undo. Mode
+changes save even short sessions and continue in a new linked session; while
+paused, switching leaves the new mode ready for Start. Tracking failures show
+an actionable large message in tracking-dependent modes and a quiet advisory
+in Coach. Debug sessions are device-local, not an authenticated remote owner
+dashboard: anyone using the same browser profile can review them. See
+[debug recording boundaries](docs/debug-recording.md).
