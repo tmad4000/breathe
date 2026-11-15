@@ -11,3 +11,10 @@ export function nextPaceBoundary(now, start, bpm) {
   const cycle = bpm ? 60000 / bpm : 0;
   return cycle ? start + (Math.floor(Math.max(0, now - start) / cycle) + 1) * cycle : now;
 }
+
+// Leave space for the measured ring/phase arrow below the plotted empty line.
+// Both idle preview and live guide use the actual persistent-control geometry.
+export function guidePlotBounds(height,transportTop,chipTop,desiredTop){
+  const floor=Math.max(0,Math.min(height,transportTop,chipTop)-40);
+  return {top:Math.min(desiredTop,Math.max(0,floor-64)),floor};
+}

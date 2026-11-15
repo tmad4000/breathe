@@ -1,11 +1,11 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.14.0';
+const VERSION = '0.14.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
-import { modeName, PATTERN_NAMES, PACES, nextPaceBoundary } from './session-controls.js';
+import { modeName, PATTERN_NAMES, PACES, nextPaceBoundary, guidePlotBounds } from './session-controls.js';
 let selectedPattern = Object.hasOwn(PATTERNS,localStorage.getItem('breathe.pattern')) ? localStorage.getItem('breathe.pattern') : '5-1-5-1';
 let activePattern = selectedPattern;
 let selectedPace = PACES.includes(localStorage.getItem('breathe.pace')) ? localStorage.getItem('breathe.pace') : '0';
@@ -496,10 +496,10 @@ function drawLane() {
   const tile = !slot.hidden && slot.offsetWidth
     ? { x: slot.offsetLeft, y: slot.offsetTop, w: slot.offsetWidth, h: slot.offsetHeight } : null;
   const camTile = tracking && tile && !video.hidden ? tile : null;
-  const top = tile ? Math.max(84, tile.y + tile.h + 40) : 84, floor = sh - $('controls').offsetHeight - 14;
+  const {top,floor}=guidePlotBounds(sh,$('controls').offsetTop,$('quickControls').offsetTop,tile?Math.max(84,tile.y+tile.h+40):84);
   const nowX = sw * 0.36, pps = Math.min(sw / 11, 90);
   const ahead = (sw - nowX) / pps, behind = nowX / pps;
-  const y = (v) => floor - v * (floor - top);
+  const y = (v) => floor - Math.max(0,Math.min(1,v)) * (floor - top);
   octx.setLineDash([]);
   octx.lineJoin = 'round'; octx.lineCap = 'round';
   // Fixed axis: empty, half and full, and the now line.
@@ -648,7 +648,7 @@ function drawPreview() {
   octx.clearRect(0, 0, sw, sh);
   const preview = new Coach(0, { pattern: PATTERNS[selectedPattern], adaptive: false });
   preview.update(preview.full * 3);
-  const top = sh * 0.18, floor = sh - $('controls').offsetHeight - 24, span = preview.full * 2.2;
+  const {top,floor}=guidePlotBounds(sh,$('controls').offsetTop,$('quickControls').offsetTop,sh*.18),span=preview.full*2.2;
   octx.beginPath();
   for (let i = 0; i <= 400; i++) {
     const x = (i / 400) * sw, v = preview.level(1.5 + (i / 400) * span, true);
@@ -1320,6 +1320,7 @@ $('modeSelect').onchange = async () => {
   closeSessionMenu(false);
   if(starting){$('modeSelect').value=displayedMode??'coach';return;}
   if(mode()===displayedMode)return;
+  clearChangeNotice();
   const next = mode(), oldMode = sessionMode, wasRunning = running, resume = running && !paused;
   preserveCameraForMode=resume&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next)&&(next==='respiration'||facing==='user');
   if (wasRunning) { debugEvent('mode-change',{from:oldMode,to:next,paused}); stop(true,preserveCameraForMode); announceChange('Session saved. Switching to '+$('modeSelect').selectedOptions[0].text+'.'); }
@@ -1334,7 +1335,7 @@ $('modeSelect').onchange = async () => {
 function renderRespirationLayout() {
   const resp=mode()==='respiration';
   document.body.classList.toggle('respiration',resp);document.body.classList.toggle('chart-focus',resp&&chartFocus);
-  for(const {el,anchor} of respAnchors){if(resp){const target=el.matches('section.stats')?document.querySelector('.card'):$('stage');if(el.parentElement!==target)target.append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
+  for(const {el,anchor} of respAnchors){if(resp){const target=el.matches('section.stats')?document.querySelector('.card'):el.id==='switchNotice'&&!running?$('respIdleStatus'):$('stage');if(el.parentElement!==target)target.append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
   if(chartFocus||!resp)$('respTrace').style.height='';
   if(!resp){video.style.objectFit='';video.style.objectPosition='';lastObjectPosition='';}
   $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;
@@ -1406,10 +1407,14 @@ function updateTrackingNotice(t, faceOk) {
   $('trackingFix').textContent = fix + (title && needs && !cameraFailure ? ' Waiting for tracking; it resumes automatically.' : '') + (title && !needs && tracking ? ' Guiding on schedule.' : '');
 }
 let undoAction = null, undoTimer = null;
+function clearChangeNotice(){
+  clearTimeout(undoTimer);undoTimer=null;undoAction=null;
+  $('switchNotice').hidden=true;$('switchNotice').querySelector('span').textContent='';$('undoChange').hidden=true;
+}
 function announceChange(text, undo = null) {
   $('switchNotice').hidden = false; $('switchNotice').querySelector('span').textContent = text;
   undoAction = undo; $('undoChange').hidden = !undo; clearTimeout(undoTimer);
-  undoTimer = setTimeout(()=>{ $('switchNotice').hidden = true; undoAction = null; },5000);
+  undoTimer = setTimeout(clearChangeNotice,5000);
 }
 $('useGuideBtn').onclick=()=>{if(starting)return;$('modeSelect').value='guide';$('modeSelect').onchange();};
 $('undoChange').onclick = () => { const f = undoAction; undoAction = null; f?.(); $('switchNotice').hidden = true; };
