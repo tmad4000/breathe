@@ -172,7 +172,7 @@ async function startCamera() {
     const s = PROC_MAX_SIDE / Math.max(srcW(), srcH());
     PW = Math.round(srcW() * s); PH = Math.round(srcH() * s);
     $('stage').classList.toggle('contain', PW > PH);
-    havePrev = false; face = null; chest = null;
+    havePrev = false; face = null; chest = null; faceSeenAt = -Infinity;
     return;
   }
   if (TEST_SRC) {
@@ -205,12 +205,13 @@ async function startCamera() {
   PH = Math.round(video.videoHeight * s);
   // A landscape camera (a laptop) is shown whole; a portrait one fills the stage.
   $('stage').classList.toggle('contain', PW > PH);
-  havePrev = false; face = null; chest = null;
+  havePrev = false; face = null; chest = null; faceSeenAt = -Infinity;
   scheduleFrame();
 }
 
 function stopCamera() {
   cameraGeneration++;
+  face=null; chest=null; faceSeenAt=-Infinity; havePrev=false;
   if (stream?.native) NATIVE?.postMessage({ cmd: 'stop' });
   nativeReady = null;
   stream?.getTracks().forEach((t) => t.stop());
@@ -260,7 +261,7 @@ function processFrame(t, mediaTime) {
     detectFace(t);
   }
   if(mode()!=='dual')pulseFrameAt=t;
-  const faceOk = t - faceSeenAt < FACE_LOST_MS;
+  const faceOk = Boolean(face) && t - faceSeenAt < FACE_LOST_MS;
   if(pulse && running && !paused && mode()!=='dual'){
     if(mode()==='finger' || (faceOk && t>=motionUntil)){
       const k=video.videoWidth/PW;
