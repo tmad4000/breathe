@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.12.1';
+const VERSION = '0.12.2';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -1326,15 +1326,15 @@ function updateTrackingNotice(t, faceOk) {
     else if (!chest || chestHidden) { title = 'Chest not in view'; fix = 'Move the phone back until your upper chest is visible.'; }
     else if (t < motionUntil) { title = 'Hold still'; fix = 'Prop the phone up and relax your shoulders.'; }
   }
-  if (cameraFailure && mode() !== 'guide') { title = 'Camera unavailable'; fix = cameraFailure + ' Switch to Guide to continue without a camera.'; }
+  if (cameraFailure && mode() !== 'guide') { title = needs ? 'Camera unavailable' : 'No camera · guiding on schedule'; fix = needs ? 'The camera is unavailable. Check camera access or use Guide to continue without one.' : ''; }
   if (title) { trackingBadSince ??= t; trackingGoodSince = null; }
   else { trackingGoodSince ??= t; if (t-trackingGoodSince < RECOVER_MS && !el.hidden && running && !paused) return; trackingBadSince = null; }
   const visible = !!title && (cameraFailure || t-trackingBadSince >= 1000);
   if (el.dataset.state !== title) { debugEvent('tracking',{state:title||'tracking',mode:mode()}); el.dataset.state=title; }
-  el.hidden = !visible; el.classList.toggle('blocking', needs || !!cameraFailure); el.setAttribute('role',needs || cameraFailure?'alert':'status');
-  document.body.classList.toggle('tracking-blocked', visible && (needs || !!cameraFailure));
+  el.hidden = !visible; el.classList.toggle('blocking', needs); el.setAttribute('role',needs?'alert':'status');
+  document.body.classList.toggle('tracking-blocked', visible && (needs));
   $('trackingTitle').textContent = title;
-  $('useGuideBtn').hidden = !cameraFailure;
+  $('useGuideBtn').hidden = !cameraFailure || !needs;
   $('trackingFix').textContent = fix + (title && needs && !cameraFailure ? ' Waiting for tracking; it resumes automatically.' : '') + (title && !needs && tracking ? ' Guiding on schedule.' : '');
 }
 let undoAction = null, undoTimer = null;
@@ -1375,7 +1375,8 @@ function syncQuickControls() {
   $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided()||!running;
   $('quickPace').value = $('paceSelect').value; $('quickPattern').value = $('patternSelect').value;
   $('guideToneBtn').setAttribute('aria-pressed',String(guideToneOn)); $('guideToneToggle').checked=guideToneOn;
-  $('guideToneBtn').textContent='Guide tone'+(!soundOn?' · muted':''); $('detectionToneBtn').textContent='Detection tone'+(!soundOn?' · muted':'');
+  $('guideToneBtn').textContent='Guide tone'; $('detectionToneBtn').textContent='Detection tone';
+  for(const id of ['guideToneBtn','detectionToneBtn']){$(id).classList.toggle('master-muted',!soundOn);$(id).title=!soundOn?'Master sound muted; preference preserved':'Toggle '+$(id).textContent.toLowerCase();}
   $('guideToneBtn').disabled = !guided() && Number($('paceSelect').value) === 0;
   $('detectionToneBtn').hidden = mode()==='guide';
   $('detectionToneBtn').setAttribute('aria-pressed',String($('ownSoundToggle').checked));
@@ -1386,6 +1387,8 @@ function syncQuickControls() {
 for (const [quick,original] of [['quickPace','paceSelect'],['quickPattern','patternSelect']]) $(''+quick).innerHTML = $(original).innerHTML;
 $('coherenceChoice').onchange=e=>{if(starting)return;$('modeSelect').value=e.target.value;$('modeSelect').onchange();};
 $('quickPace').onchange = e => changePace(e.target.value);
+for(const o of $('quickPattern').options)o.text=o.value==='5-1-5-1'?'5·1·5·1':o.value==='5-0-5'?'5·5':'4·7·8';
+for(const o of $('quickPace').options)o.text=Number(o.value)?o.value+'/min':'Off';
 $('quickPattern').onchange = e => changePattern(e.target.value);
 $('guideToneBtn').onclick = () => { guideToneOn = !guideToneOn; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); if (guideToneOn && soundOn) ensureAudio(); syncQuickControls(); };
 $('detectionToneBtn').onclick = () => { $('ownSoundToggle').checked = !$('ownSoundToggle').checked; $('ownSoundToggle').onchange(); };

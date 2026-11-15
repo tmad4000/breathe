@@ -21,7 +21,7 @@ export class DebugRecorder {
     if(message)this.message=message; else if(!failure)this.message=null;
     const elapsed=this.row?Math.floor((Date.now()-this.row.started)/1000):null;
     const text=this.message??(this.storageFull?'● storage full':!this.enabled?'○ off':this.row?'● rec':'● debug');
-    this.chip.textContent=text; this.chip.setAttribute('aria-label',text+'; open debug session details'); this.chip.classList.toggle('failed',failure||this.storageFull); this.chip.title=this.storageFull?'Storage full: unpin or export. Signals and events continue.':'Debug recording details'; this.panel.querySelector('[data-status]').textContent=text;
+    this.chip.textContent=text; this.chip.setAttribute('aria-label',text+'; open debug session details'); this.chip.classList.toggle('failed',Boolean(failure||this.storageFull)); this.chip.title=this.storageFull?'Storage full: unpin or export. Signals and events continue.':'Debug recording details'; this.panel.querySelector('[data-status]').textContent=text;
   }
   startSignals(settings) {
     this.stop(); if(!this.enabled||this.skip){this.skip=false;this.status('Not recording this session');return;}

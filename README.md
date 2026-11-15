@@ -228,3 +228,8 @@ an actionable large message in tracking-dependent modes and a quiet advisory
 in Coach. Debug sessions are device-local, not an authenticated remote owner
 dashboard: anyone using the same browser profile can review them. See
 [debug recording boundaries](docs/debug-recording.md).
+
+The Settings **Send feedback** link is part of Jacob's separate feedback rollout.
+It loads World Issue Tracker code only when tapped and opens the Breathe board.
+Ordinary app use makes no request to WIT. Submitting feedback is an explicit user
+action; debug recordings are not attached or uploaded by this integration.

@@ -295,3 +295,15 @@ body:not(.running) .topbar .title, body.running.paused .topbar .title { display:
 .coherence-choice[hidden] { display:none; }
 .mode-tabs { gap:0; padding-left:8px; padding-right:8px; }
 .mode-tabs button { padding-left:9px; padding-right:9px; font-size:12px; }
+/* Final design review: notice never covers Start, and state stays legible. */
+.debug-notice { position:static; margin:0 12px 4px; padding:2px 0; background:transparent; text-align:center; }
+body.coach .switch-notice { color:#d6d6dc; }
+body.coach .switch-notice button { color:#8ab4f8; }
+body.tracking-blocked #status { display:none; }
+.quick-controls { gap:5px; }
+.quick-controls label,.quick-controls button { padding:8px; font-size:12px; }
+.quick-controls select { max-width:130px; padding:0; width:auto; }
+.quick-controls button[aria-pressed="false"] { color:#92929b; border-color:#4b4b52; }
+.quick-controls button[aria-pressed="true"] { background:#182c43; border-color:#6ea8ff; color:#b9d7ff; }
+.feedback-link { font:inherit; border:0; padding:8px 0; color:var(--blue); background:transparent; text-decoration:underline; }
+.quick-controls button.master-muted { color:#92929b; background:#1c1c1e; }

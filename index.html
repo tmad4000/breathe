@@ -23,7 +23,7 @@
       <span class="app-version" id="topVersion"></span>
       <button class="update-btn" id="updateBtn" hidden>Update<span class="sep"> · </span><span class="what">tap to reload</span></button>
     </div>
-    <label class="title"><span class="mode-word">Mode</span> <span class="select-wrap"><select id="modeSelect" title="Switch mode"><option value="coach">Coach</option><option value="guide">Guide (no camera)</option><option value="respiration">Respiration Tracker</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg></span></label>
+    <label class="title"><span class="mode-word">Mode</span> <span class="select-wrap"><select id="modeSelect" title="Switch mode"><option value="coach">Coach</option><option value="guide">Guide</option><option value="respiration">Respiration Tracker</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg></span></label>
     <div class="topright">
       <button id="debugChip" class="debug-chip" type="button">Debug ON</button>
       <button class="icon-btn" id="soundBtn" aria-pressed="true" aria-label="Sound" title="Sound on · press M to mute">
@@ -98,8 +98,8 @@
       </button>
     </div>
     <div class="quick-controls" id="quickControls">
-      <label id="quickPaceLabel">Guide pace <select id="quickPace" aria-label="Guide pace"></select></label>
-      <label id="quickPatternLabel">Pattern <select id="quickPattern" aria-label="Breathing pattern"></select></label>
+      <label id="quickPaceLabel">Pace <select id="quickPace" aria-label="Guide pace"></select></label>
+      <label id="quickPatternLabel"><select id="quickPattern" aria-label="Breathing pattern"></select></label>
       <button id="guideToneBtn" type="button" aria-pressed="true">Guide tone</button>
       <button id="detectionToneBtn" type="button" aria-pressed="false" title="Short high tick for detected inhale; low tick for exhale">Detection tone</button>
     </div>
@@ -192,7 +192,7 @@
       <label class="toggle"><input type="checkbox" id="guideToneToggle" checked><span>Guide tone (timer sound); keeps the visual guide when off</span></label>
       <section id="debugPanel" class="debug-panel" aria-label="Device-private debug sessions">
         <h3>Debug sessions · this browser only</h3>
-        <p>Saves your breathing signal and app events in this browser. No video or audio. Accessible to anyone using this browser profile. Nothing is uploaded. Retained for 14 days or up to 100 MB; Pinned sessions are never auto-deleted; unpinned sessions are pruned after 14 days or 100 MB.</p>
+        <p>Saves your breathing signal and app events in this browser. No video or audio. Nothing is uploaded. Unpinned sessions are kept 14 days or up to 100 MB; pinned sessions are never auto-deleted. Anyone using this browser profile can see them.</p>
         <label class="toggle"><input type="checkbox" data-enabled checked><span>Debug recording on</span></label>
         <p data-status role="status"></p>
         <button type="button" data-mark>Mark a problem</button> <button type="button" data-review>Saved sessions</button> <button type="button" data-delete-all>Delete all debug sessions</button>
@@ -210,6 +210,6 @@
   </div>
 
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.12.1"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.12.2"></script>
 </body>
 </html>
