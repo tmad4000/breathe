@@ -26,20 +26,19 @@ try {
   await page.goto(base);
   await page.waitForTimeout(500);
   assert.equal(await page.textContent('#topVersion'), `v${VERSION}`);
-  assert.ok(await visible('#topVersion'));
+  assert.ok(!(await visible('#topVersion')),'phone version lives in About');
   assert.ok(!(await visible('#updateBtn')));
   assert.equal(await page.getAttribute('#historyBtn', 'aria-label'), 'Settings and history');
-  assert.match(await page.title(), /^Coach — Breathe$/);
+  assert.match(await page.title(), /^Adaptive breathing — Breathe$/);
   const box = async (sel) => page.locator(sel).boundingBox();
-  const sel = await box('#modeSelect'), ver = await box('#topVersion'), flip = await box('#soundBtn');
-  assert.ok(ver.x + ver.width <= sel.x, 'version text clear of the mode selector');
+  const sel = await box('#modeSelect'), flip = await box('#soundBtn');
   assert.ok(sel.x + sel.width <= flip.x, 'mode selector clear of the sound button');
   if (shots) await page.screenshot({ path: `${shots}/phone-normal.png` });
 
   // Sheet: heading and Settings above History.
   await page.click('#historyBtn');
   assert.equal(await page.textContent('#historySheet h2'), 'Settings & history');
-  assert.deepEqual(await page.$$eval('#historySheet h3', (hs) => hs.map((h) => h.textContent)), ['Settings', 'History']);
+  assert.deepEqual(await page.$$eval('#historySheet h3', (hs) => hs.map((h) => h.textContent)), ['Settings', 'Breathing view', 'Debug sessions · this browser only', 'History', 'About']);
   if (shots) await page.screenshot({ path: `${shots}/phone-settings-sheet.png` });
   await page.click('#closeHistoryBtn');
 
@@ -48,7 +47,7 @@ try {
     serve = () => r;
     await recheck();
     assert.ok(!(await visible('#updateBtn')), JSON.stringify(r));
-    assert.ok(await visible('#topVersion'));
+    assert.ok(!(await visible('#topVersion')),'phone version lives in About');
   }
 
   // Newer: the notice replaces the version text and does not reload on its own.
@@ -60,7 +59,7 @@ try {
   assert.ok(!(await visible('#topVersion')));
   assert.match(await page.innerText('#updateBtn'), /Update\s+tap to reload/);
   const upd = await box('#updateBtn'), sel2 = await box('#modeSelect');
-  assert.ok(upd.x + upd.width <= sel2.x, 'update notice clear of the mode selector');
+  assert.ok(upd.y >= sel2.y + sel2.height, 'update notice clear of the mode selector');
   await page.evaluate(() => { window.__notReloaded = true; });
   await page.waitForTimeout(1000);
   assert.equal(await page.evaluate(() => window.__notReloaded), true);

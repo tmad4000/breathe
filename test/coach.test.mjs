@@ -177,3 +177,34 @@ test('pause shifts the guide clock without jumping phase', () => {
   assert.equal(c.level(125),level);
   assert.equal(c.phase(125),phase);
 });
+
+test('target pattern only changes live timing at a full inhale boundary', () => {
+  const c=new Coach(0,{adaptive:false});
+  const first=c.segs.find(s=>s.kind==='in');
+  const oldPattern=[...c.pattern],before=c.level(first.t0-0.001);
+  assert.throws(()=>c.applyPatternAtBoundary(PATTERNS['4-7-8'],first.t0+0.5),/boundary/);
+  assert.deepEqual(c.pattern,oldPattern);
+  c.applyPatternAtBoundary(PATTERNS['4-7-8'],first.t0);
+  assert.equal(c.level(first.t0),0);assert.equal(c.seg(first.t0).t1-first.t0,4);
+  assert.equal(c.level(first.t0-0.001),before);assert.deepEqual(c.pattern,PATTERNS['4-7-8']);
+});
+
+test('paused target remains safe after the guide clock shifts', () => {
+  const c=new Coach(0,{adaptive:false});c.update(2);
+  const before=c.level(2);c.shiftTime(60);assert.equal(c.level(62),before);
+  const next=c.segs.find(s=>s.kind==='in'&&s.t0>62);
+  c.applyPatternAtBoundary(PATTERNS['5-0-5'],next.t0);
+  assert.equal(c.level(next.t0),0);assert.equal(c.seg(next.t0).t1-next.t0,5);
+});
+
+test('arrived adaptive guide progresses toward a newly selected longer target',()=>{
+ const c=new Coach(0);
+ for(let t=0;t<300;t+=0.05)c.update(t);
+ assert.equal(c.stage,'arrive');assert.equal(c.cycle,12);
+ const next=c.segs.find(s=>s.kind==='in'&&s.t0>300);
+ c.applyPatternAtBoundary(PATTERNS['4-7-8'],next.t0);assert.equal(c.stage,'lead');
+ for(let t=next.t0;t<900;t+=0.05)c.update(t);
+ assert.equal(c.stage,'arrive');assert.equal(c.cycle,19);
+ const shorter=c.segs.find(s=>s.kind==='in'&&s.t0>900);
+ c.applyPatternAtBoundary(PATTERNS['5-0-5'],shorter.t0);assert.equal(c.stage,'arrive');assert.equal(c.cycle,10);
+});

@@ -7,7 +7,7 @@ try {
  await page.waitForFunction(()=>window.breatheDebug);
  assert.equal(await page.isVisible('#debugNotice'),true,'notice before start');
  assert.match(await page.textContent('#debugChip'),/debug/);
- await page.click('#modeTabs [data-mode=guide]');await page.click('#startBtn');await page.waitForTimeout(2300);await page.click('#stopBtn');
+ await page.selectOption('#modeSelect','guide');await page.click('#startBtn');await page.waitForTimeout(2300);await page.click('#stopBtn');
  const saved=await page.evaluate(async()=>{await breatheDebug.queue;return breatheDebug.store.rows();});
  assert.equal(saved.length,1);assert.equal(saved[0].kind,'signals');assert.ok(saved[0].events.some(e=>e.channel==='guide-state'));assert.ok(saved[0].ended);
  assert.equal(saved[0].blob,undefined,'no raw camera or audio');

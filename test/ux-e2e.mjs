@@ -35,20 +35,22 @@ try {
   assert.equal(a.state, 'running', 'AudioContext running in Guide');
   assert.ok(a.n >= 1, `Guide played ${a.n} tones`);
   await page.keyboard.press('m');
-  assert.equal(await page.getAttribute('#soundBtn', 'aria-pressed'), 'false');
+  assert.equal(await page.getAttribute('#soundBtn', 'data-muted'), 'true');
   const n0 = await page.evaluate(() => window.__osc);
   await page.waitForTimeout(6000);
   assert.equal(await page.evaluate(() => window.__osc), n0, 'no tones while muted');
   assert.equal(await page.evaluate(() => localStorage.getItem('breathe.sound')), 'off');
   await page.click('#soundBtn');
-  assert.equal(await page.getAttribute('#soundBtn', 'aria-pressed'), 'true');
+  await page.click('#masterSoundControl');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getAttribute('#soundBtn', 'data-muted'), 'false');
   await page.click('#stopBtn');
   assert.ok(await page.locator('#summarySheet').isHidden(), 'Stop does not open a sheet');
   assert.ok(await page.locator('#sumToast').isVisible(), 'Stop shows the small card');
   assert.match(await page.locator('#stLine').textContent(), /^0:1\d · /);
   await page.click('#stDetails');
   assert.ok(await page.locator('#summarySheet').isVisible());
-  assert.match(await page.title(), /^Session summary · Guide/);
+  assert.match(await page.title(), /^Session summary · Fixed breathing/);
   await page.keyboard.press('Escape');
   assert.ok(await page.locator('#summarySheet').isHidden(), 'Esc closes the summary');
   await page.click('#historyBtn');
@@ -58,7 +60,7 @@ try {
   await page.click('#historyBtn');
   await page.mouse.click(195, 20);   // the dimmed area above the sheet
   assert.ok(await page.locator('#historySheet').isHidden(), 'a tap outside closes settings');
-  assert.match(await page.title(), /^Guide — Breathe$/);
+  assert.match(await page.title(), /^Fixed breathing — Breathe$/);
   await page.selectOption('#modeSelect', 'respiration', {force:true});
   assert.ok(await page.locator('#flipBtn').isVisible(), 'camera switch in Respiration');
   await page.close();
@@ -66,6 +68,7 @@ try {
   page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`${base}?coach&src=${encodeURIComponent(clip)}`);
+  if(await page.locator('#startBtn').isVisible())await page.click('#startBtn');
   await page.waitForFunction(() => window.__breathe.tracking, {}, { timeout: 30000 });
   await page.waitForTimeout(2500);
   const on = { slot: await page.locator('#camSlot').boundingBox(), video: await page.locator('#video').boundingBox(), lane: await laneTop(page) };

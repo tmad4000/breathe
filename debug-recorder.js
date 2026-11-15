@@ -1,4 +1,5 @@
 import './private-session-store.js';
+import {modeName} from './session-controls.js';
 
 // Breathe adapter: signals/events only. All writes stay in this browser.
 export class DebugRecorder {
@@ -54,10 +55,10 @@ export class DebugRecorder {
       if(!rows.length)list.textContent='No debug sessions in this browser.';
       for(const r of rows){
         const item=document.createElement('article');item.className='debug-session';
-        const title=document.createElement('strong');title.textContent=`${new Date(r.started).toLocaleString()} · ${r.settings.mode} · ${Math.round(((r.ended??Date.now())-r.started)/1000)}s · ${Math.round(r.bytes/1024)} KB`;item.append(title);
+        const title=document.createElement('strong');title.textContent=`${new Date(r.started).toLocaleString()} · ${modeName(r.settings.mode)} · ${Math.round(((r.ended??Date.now())-r.started)/1000)}s · ${Math.round(r.bytes/1024)} KB`;item.append(title);
         const samples=r.events.filter(e=>e.channel==='signal').map(e=>e.value.wave).filter(Number.isFinite);
         if(samples.length){const c=document.createElement('canvas');c.width=600;c.height=120;c.setAttribute('aria-label','Recorded breathing signal');c.style.width='100%';item.append(c);const ctx=c.getContext('2d'),range=samples.reduce((m,v)=>Math.max(m,Math.abs(v)),1e-6);ctx.strokeStyle='#6ea8ff';ctx.beginPath();samples.forEach((v,i)=>{const x=i/(samples.length-1||1)*600,y=60-v/range*50;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();}
-        const summary=`Breathe ${r.settings.version}, ${r.settings.mode}; ${r.events.length} events, ${r.events.filter(e=>e.channel==='mark').length} marks. No video/audio. Stored only in this browser.`;
+        const summary=`Breathe ${r.settings.version}, ${modeName(r.settings.mode)}; ${r.events.length} events, ${r.events.filter(e=>e.channel==='mark').length} marks. No video/audio. Stored only in this browser.`;
         const add=(label,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{try{await fn();}catch{this.status(label+' failed',true);}};item.append(b);};
         add('Copy summary',()=>navigator.clipboard.writeText(summary));
         add('Export',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(r)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`breathe-debug-${r.id}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});

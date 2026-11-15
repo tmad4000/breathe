@@ -1,3 +1,4 @@
+import {chooseSession} from './session-menu.mjs';
 import assert from 'node:assert/strict';
 import {launch} from './browser.mjs';
 const browser=await launch();
@@ -11,14 +12,14 @@ try{
  await page.evaluate(()=>{breatheDebug.status();breatheDebug.status();breatheDebug.status();});
  assert.equal(await page.locator('#debugChip').evaluate(e=>e.classList.contains('failed')),false,'repeated idle status cannot toggle amber');
  assert.equal(requests.some(x=>x.includes('worldissuetracker.com')),false,'no remote feedback code on ordinary visit');
- await page.click('#modeTabs [data-mode=guide]');await page.click('#startBtn');
- assert.equal(await page.locator('#modeSelect option:checked').textContent(),'Guide');
- await page.click('#pauseBtn');await page.selectOption('#quickPattern','4-7-8');
+ await page.selectOption('#modeSelect','guide');await page.click('#startBtn');
+ assert.equal(await page.locator('#modeSelect option:checked').textContent(),'Fixed breathing');
+ await page.click('#pauseBtn');await chooseSession(page,'pattern','4-7-8');
  const c=await page.locator('#switchNotice').evaluate(e=>getComputedStyle(e).color);assert.equal(c,'rgb(214, 214, 220)','readable confirmation on dark Coach/Guide');
- await page.selectOption('#quickPattern','5-1-5-1');
+ await chooseSession(page,'pattern','5-1-5-1');
  const buttons=await page.locator('#quickControls > :not([hidden])').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().top));
  assert.ok(Math.max(...buttons)-Math.min(...buttons)<5,'three controls fit one row at390px');
- await page.click('#modeTabs [data-mode=coach]');await page.click('#startBtn');
+ await page.selectOption('#modeSelect','coach');await page.click('#startBtn');
  await page.waitForFunction(()=>window.__breathe.coach);
  assert.equal(await page.locator('#trackingNotice').evaluate(e=>e.classList.contains('blocking')),false,'Coach no-camera is advisory');
  await page.click('#stopBtn');await page.click('#historyBtn');

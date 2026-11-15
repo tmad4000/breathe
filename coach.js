@@ -65,6 +65,26 @@ export class Coach {
     this.#repace(now); this.#note(now, 'pattern-change');
   }
 
+  // UI target changes wait for a full inhale. Rebuild only from that boundary;
+  // the completed breath, tracking state and history remain intact.
+  applyPatternAtBoundary(pattern, at) {
+    const seg = this.segs.find(s => s.t0 === at);
+    if (!seg || seg.kind !== 'in' || seg.from !== 0 || seg.to !== 1) throw new Error('Expected full inhale boundary');
+    if (!Array.isArray(pattern) || pattern.length !== 4 || pattern.some(x => !Number.isFinite(x) || x < 0) || pattern[0] <= 0 || pattern[2] <= 0) throw new Error('Invalid breathing pattern');
+    this.pattern = [...pattern]; this.full = pattern.reduce((a,b)=>a+b,0);
+    this.minCycle = Math.min(this.full, MIN_CYCLE_S);
+    this.cycle = this.adaptive ? clamp(this.cycle,this.minCycle,this.full) : this.full;
+    if(this.adaptive){
+      if(this.cycle >= this.full) this.stage='arrive';
+      else if(this.stage==='arrive') this.stage='lead';
+      this.breaths=0; this.holds=0; this.holding=false;
+    }
+    this.segs.length = this.segs.indexOf(seg);
+    const d = this.durations();
+    this.segs.push({t0:at,t1:at+d.in,from:0,to:1,kind:'in'});
+    this.#extend(at); this.#note(at,'pattern-change');
+  }
+
   // Pause time never advances the guide or its future segments.
   shiftTime(seconds) {
     this.t0 += seconds; this.checked += seconds;
