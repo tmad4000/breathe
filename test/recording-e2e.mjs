@@ -6,7 +6,7 @@ try {
  await page.goto(process.argv[2]??'http://127.0.0.1:8793/');
  await page.waitForFunction(()=>window.breatheDebug);
  assert.equal(await page.isVisible('#debugNotice'),true,'notice before start');
- assert.match(await page.textContent('#debugChip'),/on/);
+ assert.match(await page.textContent('#debugChip'),/debug/);
  await page.click('#modeTabs [data-mode=guide]');await page.click('#startBtn');await page.waitForTimeout(2300);await page.click('#stopBtn');
  const saved=await page.evaluate(async()=>{await breatheDebug.queue;return breatheDebug.store.rows();});
  assert.equal(saved.length,1);assert.equal(saved[0].kind,'signals');assert.ok(saved[0].events.some(e=>e.channel==='guide-state'));assert.ok(saved[0].ended);
@@ -19,7 +19,7 @@ try {
  await page.uncheck('[data-enabled]');await page.locator('#historySheet .sheet-close').click();
  await page.click('#startBtn');await page.waitForTimeout(250);await page.click('#stopBtn');
  assert.equal(await page.evaluate(async()=>{await breatheDebug.queue;return (await breatheDebug.store.rows()).length;}),0);
- await page.reload();assert.match(await page.textContent('#debugChip'),/Not recording/,'off persisted');
+ await page.reload();assert.match(await page.textContent('#debugChip'),/off/,'off persisted');
  // Real IndexedDB store: age, Keep, size cap, chunk order and cascade deletion.
  const result=await page.evaluate(async()=>{
    const s=new LocalSessionStore('breathe-test-'+crypto.randomUUID(),{retentionDays:14,maxBytes:100});
@@ -32,7 +32,7 @@ try {
    const text=await (await s.audio({id:'chunks'})).text();await s.write({id:'chunks'},true);const empty=(await s.audio({id:'chunks'})).size;
    await s.write({id:'keep-big',started:now,bytes:150,keep:true});const state=await s.prune();const kept=(await s.rows()).some(x=>x.id==='keep-big');return {ids,text,empty,full:state.full,kept};
  });
- assert.deepEqual(result,{ids:['keep'],text:'ab',empty:0,full:true,kept:true});
+ assert.deepEqual(result,{ids:['keep','new'],text:'ab',empty:0,full:true,kept:true});
  // Event limit must stop cleanly; active Delete/Keep must survive checkpoints.
  await page.evaluate(()=>{breatheDebug.enabled=true;breatheDebug.startSignals({mode:'guide',version:'test'});breatheDebug.row.events=Array(60000).fill({});breatheDebug.record('test',performance.now(),{});});
  assert.equal(await page.evaluate(()=>breatheDebug.row),null);

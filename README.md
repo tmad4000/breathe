@@ -9,7 +9,7 @@ A web app that works like Google Fit's camera respiratory-rate check, but
 ## How it works
 
 Same idea as Google's: the front camera follows the small rise and fall of your
-chest (optical flow). Everything runs on the phone; no video leaves the device. During debugging, derived breathing signals and app events save automatically in this browser (no video or audio); the visible Debug control turns this off and opens local review, export and deletion. Nothing is uploaded. Debug history lasts 14 days or up to 100 MB; Keep exempts age only.
+chest (optical flow). Everything runs on the phone; no video leaves the device. During debugging, derived breathing signals and app events save automatically in this browser (no video or audio); the visible Debug control turns this off and opens local review, export and deletion. Nothing is uploaded. Debug history lasts 14 days or up to 100 MB; Pinned sessions are never auto-deleted. The age and 100 MB cap apply to unpinned sessions.
 
 1. **Find you:** MediaPipe face detector (`@mediapipe/tasks-vision` 1.0.1,
    vendored in `vendor/`, BlazeFace short-range model in `models/`) finds your

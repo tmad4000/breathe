@@ -35,12 +35,12 @@
       const rows=await this.rows(), cutoff=Date.now()-this.retentionMs;
       let remaining=[];
       for(const row of rows){if(!row.keep&&row.started<cutoff)await this.write(row,true);else remaining.push(row);}
-      // Kept takes survive age pruning, but the cap still applies; evict oldest
-      // unkept takes first, never silently evict kept takes. Caller stops new recording if full.
-      remaining.sort((a,b)=>Number(a.keep??false)-Number(b.keep??false)||a.started-b.started);
-      let bytes=remaining.reduce((n,r)=>n+(r.bytes||0),0);
-      for(const row of remaining){if(bytes<=this.maxBytes)break;if(row.keep)continue;await this.write(row,true);bytes-=row.bytes||0;}
-      return {bytes, maxBytes:this.maxBytes, full:bytes>=this.maxBytes};
+      // Keep is never auto-deleted. The cap applies to unpinned data only.
+      const pinnedBytes=remaining.filter(r=>r.keep).reduce((n,r)=>n+(r.bytes||0),0);
+      const unpinned=remaining.filter(r=>!r.keep).sort((a,b)=>a.started-b.started);
+      let unpinnedBytes=unpinned.reduce((n,r)=>n+(r.bytes||0),0);
+      for(const row of unpinned){if(unpinnedBytes<=this.maxBytes)break;await this.write(row,true);unpinnedBytes-=row.bytes||0;}
+      return {bytes:pinnedBytes+unpinnedBytes,pinnedBytes,unpinnedBytes,maxBytes:this.maxBytes,full:pinnedBytes>=this.maxBytes};
     }
   }
   globalThis.LocalSessionStore=LocalSessionStore;

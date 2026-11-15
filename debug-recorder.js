@@ -20,8 +20,8 @@ export class DebugRecorder {
   status(message=null, failure=false) {
     if(message)this.message=message; else if(!failure)this.message=null;
     const elapsed=this.row?Math.floor((Date.now()-this.row.started)/1000):null;
-    const text=this.message??(!this.enabled?'○ Not recording':this.row?`● Debug rec ${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`:'● Debug rec on');
-    this.chip.textContent=text; this.chip.setAttribute('aria-label',text+'; open debug session details'); this.chip.classList.toggle('failed',failure); this.panel.querySelector('[data-status]').textContent=text;
+    const text=this.message??(this.storageFull?'● storage full':!this.enabled?'○ off':this.row?'● rec':'● debug');
+    this.chip.textContent=text; this.chip.setAttribute('aria-label',text+'; open debug session details'); this.chip.classList.toggle('failed',failure||this.storageFull); this.chip.title=this.storageFull?'Storage full: unpin or export. Signals and events continue.':'Debug recording details'; this.panel.querySelector('[data-status]').textContent=text;
   }
   startSignals(settings) {
     this.stop(); if(!this.enabled||this.skip){this.skip=false;this.status('Not recording this session');return;}
@@ -40,7 +40,7 @@ export class DebugRecorder {
   checkpoint() {
     if(!this.row)return;
     const snapshot=structuredClone(this.row); snapshot.bytes=new Blob([JSON.stringify(snapshot)]).size;
-    this.queue=this.queue.then(async()=>{await this.store.write(snapshot);const state=await this.store.prune();const present=(await this.store.rows()).some(r=>r.id===snapshot.id);if((state.full||!present)&&this.row?.id===snapshot.id){this.row=null;this.event=null;this.status('Not saving · storage limit reached',true);}}).catch(()=>{if(this.row?.id===snapshot.id){this.row=null;this.event=null;}this.status('Not saving · storage full or unavailable',true);});
+    this.queue=this.queue.then(async()=>{await this.store.write(snapshot);const state=await this.store.prune();const present=(await this.store.rows()).some(r=>r.id===snapshot.id);if(!present&&this.row?.id===snapshot.id){this.row=null;this.event=null;this.status('Not saving · storage limit reached',true);}else {this.storageFull=state.full;this.status();}}).catch(()=>{if(this.row?.id===snapshot.id){this.row=null;this.event=null;}this.status('Not saving · storage full or unavailable',true);});
   }
   stop(reason=null) {
     if(this.row){this.row.ended=Date.now();this.record('stop',performance.now(),{});this.checkpoint();}

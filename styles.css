@@ -288,3 +288,10 @@ body:not(.running) .topbar .title, body.running.paused .topbar .title { display:
 .debug-chip { font-size:11px; padding:4px 7px; color:#92929b; border-color:#5a5a63; }
 .tracking-notice button { display:block; margin-top:8px; padding:8px 12px; border:1px solid #a87932; border-radius:8px; font:inherit; background:transparent; color:inherit; }
 .tracking-notice button[hidden] { display:none; }
+.debug-chip { border:0; background:transparent; min-height:40px; padding:8px 4px; }
+.debug-notice { position:fixed; bottom:4px; left:10px; right:10px; z-index:8; text-align:center; background:#1c1c1e; color:#9999a3; border-radius:5px; padding:4px; }
+.coherence-choice { flex:none; margin:0 14px 6px; color:var(--muted); font-size:13px; }
+.coherence-choice select { font:inherit; border-radius:12px; padding:5px; }
+.coherence-choice[hidden] { display:none; }
+.mode-tabs { gap:0; padding-left:8px; padding-right:8px; }
+.mode-tabs button { padding-left:9px; padding-right:9px; font-size:12px; }
