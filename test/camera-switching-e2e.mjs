@@ -14,6 +14,7 @@ try{
   const count=await p.evaluate(()=>__cameraCalls.length);await p.selectOption('#modeSelect',m);await p.waitForFunction(()=>__breathe.controls.running);
   assert.equal(await p.evaluate(()=>__cameraCalls.length),count,'compatible running switch reuses camera');assert.equal(await p.evaluate(()=>__tracks.filter(t=>t.readyState==='live').length),1);assert.equal(await p.evaluate(()=>__breathe.controls.groupId),group);
  }
+ await p.click('#stopBtn');await p.selectOption('#modeSelect','respiration');await p.click('#flipBtn');await p.click('#startBtn');await p.waitForFunction(()=>__breathe.controls.running);assert.equal(await p.evaluate(()=>__cameraCalls.at(-1).video.facingMode),'environment');const rearCalls=await p.evaluate(()=>__cameraCalls.length);await p.selectOption('#modeSelect','remote');await p.waitForFunction(()=>__breathe.controls.running);assert.equal(await p.evaluate(()=>__cameraCalls.length),rearCalls+1,'rear Tracker camera is not reused as hands-free front camera');assert.equal(await p.evaluate(()=>__cameraCalls.at(-1).video.facingMode),'user');
  await p.selectOption('#modeSelect','finger');await p.waitForFunction(()=>__breathe.controls.running);assert.equal(await p.evaluate(()=>__cameraCalls.at(-1).video.facingMode),'environment');
  await p.selectOption('#modeSelect','remote');await p.waitForFunction(()=>__breathe.controls.running);assert.equal(await p.evaluate(()=>__cameraCalls.at(-1).video.facingMode),'user');
  // Ended tracks recover on visibility without replacing the active session.

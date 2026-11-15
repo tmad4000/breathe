@@ -157,7 +157,8 @@ async function startCamera() {
   stopCamera();
   const requestedGeneration=cameraGeneration;
   pulse?.reset();
-  if(!chestOnly()) facing = mode() === 'finger' ? 'environment' : 'user';
+  if(mode()==='finger')facing='environment';
+  else if(mode()==='coach'||mode()==='remote')facing='user';
   source = mode() === 'dual' ? nativeView : video;
   nativeView.hidden = source === video; video.hidden = source !== video;
   if (source === nativeView) {
@@ -1319,7 +1320,7 @@ $('modeSelect').onchange = async () => {
   if(starting){$('modeSelect').value=displayedMode??'coach';return;}
   if(mode()===displayedMode)return;
   const next = mode(), oldMode = sessionMode, wasRunning = running, resume = running && !paused;
-  preserveCameraForMode=resume&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next);
+  preserveCameraForMode=resume&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next)&&(next==='respiration'||facing==='user');
   if (wasRunning) { debugEvent('mode-change',{from:oldMode,to:next,paused}); stop(true,preserveCameraForMode); announceChange('Session saved. Switching to '+$('modeSelect').selectedOptions[0].text+'.'); }
   cameraFailure='';trackingBadSince=trackingGoodSince=null;$('trackingNotice').hidden=true;document.body.classList.remove('tracking-blocked');
   if(!chestOnly()&&localStorage.getItem('breathe.pace')===null)selectedPace='6';

@@ -2,10 +2,11 @@
 // remembered; Stop shows a small card, not a sheet; sheets close with X, Esc and a tap
 // outside; the camera-switch button only appears in Respiration; and in Coach the camera
 // slot and the lane do not move when tracking is switched off.
-// Usage: node test/ux-e2e.mjs [baseUrl] [clip with face and chest]
+// Synthetic camera UI regression; no real tracking or audio listening claim.
+// Usage: node test/ux-e2e.mjs [baseUrl]
 import assert from 'node:assert/strict';
 import { launch } from './browser.mjs';
-const [base = 'http://127.0.0.1:8968/', clip = 'test/fixtures/b12-face.mp4'] = process.argv.slice(2);
+const [base = 'http://127.0.0.1:8968/'] = process.argv.slice(2);
 const browser = await launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
 const errors = [];
 const audioHook = () => {
