@@ -246,7 +246,7 @@ are saved under `docs/design/2026-11-15-respiration-tracker/`.
 
 Send feedback loads the World Issue Tracker widget from worldissuetracker.com.
 Camera cover is display-only: capture and optical-flow input remain unchanged.
-If cover would crop a tracked face/chest box, display falls back to contain.
+Cover stays full-size. A valid tracked chest gently pans the display crop toward it; blocked tracking and the Chart focus thumbnail retain centered cover. Capture and optical-flow inputs are unchanged.
 Rendering telemetry records 10-second fps/processing-time windows. Glass blur
 starts off, is enabled only after a healthy baseline, and is dropped if frame
 rate or processing time deteriorates. The dark translucent fill remains without

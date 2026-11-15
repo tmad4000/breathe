@@ -1,12 +1,10 @@
 // Display-only geometry. Never changes capture dimensions or optical-flow input.
-export function displayMapping({sourceWidth,sourceHeight,width,height,x=0,y=0,rects=[],mirrored=false}) {
-  const mapFor=fit=>{
-    const k=(fit==='contain'?Math.min:Math.max)(width/sourceWidth,height/sourceHeight),ox=x+(width-sourceWidth*k)/2,oy=y+(height-sourceHeight*k)/2;
-    return r=>{const left=ox+r.x*k,w=r.w*k;return{x:mirrored?x+width-(left-x)-w:left,y:oy+r.y*k,w,h:r.h*k};};
-  };
-  let fit='cover',map=mapFor(fit);
-  if(rects.filter(Boolean).some(r=>{const q=map(r);return q.x<x-1||q.y<y-1||q.x+q.w>x+width+1||q.y+q.h>y+height+1;})){fit='contain';map=mapFor(fit);}
-  return{fit,map};
+export function displayMapping({sourceWidth,sourceHeight,width,height,x=0,y=0,focus=null,position=null,mirrored=false}) {
+  const k=Math.max(width/sourceWidth,height/sourceHeight),dx=width-sourceWidth*k,dy=height-sourceHeight*k;
+  const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
+  const target={x:focus&&dx<-1?clamp((width/2-(focus.x+focus.w/2)*k)/dx,0,1):.5,y:focus&&dy<-1?clamp((height/2-(focus.y+focus.h/2)*k)/dy,0,1):.5};
+  const p=position??target,ox=x+dx*p.x,oy=y+dy*p.y;
+  return{fit:'cover',position:p,target,map:r=>{const left=ox+r.x*k,w=r.w*k;return{x:mirrored?x+width-(left-x)-w:left,y:oy+r.y*k,w,h:r.h*k};}};
 }
 export class BlurBudget {
   constructor(supported){this.supported=supported;this.enabled=false;this.baseline=null;this.disabled=false;}
