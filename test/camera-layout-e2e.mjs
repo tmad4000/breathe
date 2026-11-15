@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {launch} from './browser.mjs';
+const browser=await launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
+try{
+ const p=await browser.newPage({viewport:{width:390,height:780}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.goto(process.argv[2]??'http://127.0.0.1:8793/');await p.click('#modeTabs [data-mode=respiration]');
+ const layout=()=>p.evaluate(()=>{const r=id=>document.getElementById(id).getBoundingClientRect().toJSON();return{stage:r('stage'),video:r('video'),trace:r('respTrace'),card:document.querySelector('.card').getBoundingClientRect().toJSON(),fit:getComputedStyle(document.getElementById('video')).objectFit,body:document.body.scrollHeight,height:innerHeight};});
+ let a=await layout();assert.equal(a.fit,'cover');assert.ok(a.stage.height>600,'camera stage uses most phone height');assert.equal(a.video.height,a.stage.height);assert.equal(a.video.width,a.stage.width);assert.equal(a.trace.height,50);assert.ok(a.card.top>=a.stage.top&&a.card.bottom<a.stage.bottom,'HUD over video');
+ await p.click('#startBtn');await p.waitForFunction(()=>window.__breathe.session&&document.body.classList.contains('running'));await p.waitForTimeout(400);
+ assert.equal(await p.locator('#quickControls').isVisible(),false,'controls tray collapses running');await p.click('#respTuneBtn');assert.equal(await p.locator('#quickControls').isVisible(),true);await p.click('#respTuneBtn');
+ await p.click('#chartFocusBtn');a=await layout();assert.equal(a.video.width,92);assert.equal(a.video.height,124);assert.ok(a.trace.height>200,'large chart');assert.equal(await p.getAttribute('#chartFocusBtn','aria-pressed'),'true');
+ await p.click('#stopBtn');await p.reload();assert.equal(await p.getAttribute('#chartFocusBtn','aria-pressed'),'true','layout survives reload for mode');await p.click('#modeTabs [data-mode=coach]');assert.equal(await p.locator('#chartFocusBtn').isVisible(),false);assert.equal(await p.locator('#respTrace').isVisible(),false);assert.equal(await p.locator('#stage > .card').count(),0,'Coach card restored');
+ await p.click('#modeTabs [data-mode=respiration]');assert.equal(await p.getAttribute('#chartFocusBtn','aria-pressed'),'true');await p.click('#chartFocusBtn');a=await layout();assert.equal(a.video.height,a.stage.height);
+ // Dark landscape viewport keeps controls in view and camera cover.
+ await p.setViewportSize({width:844,height:390});a=await layout();assert.equal(a.video.width,a.stage.width);assert.equal(a.fit,'cover');assert.ok(a.body<=a.height,'no full-page scroll');await p.click('#chartFocusBtn');a=await layout();assert.ok(a.trace.height>=90,'landscape chart stays usable');
+ assert.deepEqual(errors,[]);console.log('PASS: camera-first cover/HUD/trace,collapsible controls,Chart focus persistence,mode isolation,landscape');
+}finally{await browser.close();}

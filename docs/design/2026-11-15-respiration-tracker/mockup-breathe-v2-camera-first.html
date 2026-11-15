@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Breathe — layout mockup v2: camera-first Respiration Tracker with a Chart focus option</title>
+<style>
+  :root { --bg:#0b0d10; --card:#14171c; --line:#262b33; --line2:#39404b; --text:#eef0f3; --muted:#9aa2ad; --faint:#6c7480; --accent:#6ea8ff; --warn:#f0b445; --rec:#f2676b; --ok:#58c896;
+          --glass:rgba(10,12,15,.46); --font:-apple-system, BlinkMacSystemFont, Inter, "Segoe UI", Roboto, Arial, sans-serif; }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  body { font-family:var(--font); background:#050607; color:var(--text); padding:20px; font-size:14px; line-height:1.45; -webkit-font-smoothing:antialiased; }
+  button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:8px; }
+  .wrap { display:flex; flex-wrap:wrap; gap:28px; align-items:flex-start; justify-content:center; }
+  .side { max-width:400px; }
+  .side h2 { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 8px; } .side h2:first-child { margin-top:0; }
+  .side li { font-size:13px; color:var(--muted); margin-bottom:8px; } .side ul { padding-left:18px; } .side b { color:var(--text); font-weight:600; }
+  .sim { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+  .sim button { font-size:12px; color:var(--text); background:var(--card); border:1px solid var(--line2); border-radius:7px; padding:5px 10px; }
+  .sim button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+
+  .phone { width:390px; height:780px; background:var(--bg); border:1px solid var(--line2); border-radius:30px; overflow:hidden; display:flex; flex-direction:column; position:relative; flex:none; }
+  .topbar { height:46px; display:flex; align-items:center; justify-content:space-between; padding:0 6px; flex:none; }
+  .tl, .tr { display:flex; align-items:center; gap:2px; }
+  .icon { width:40px; height:40px; display:grid; place-items:center; color:var(--text); border-radius:10px; }
+  .icon svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .ver { font-size:11px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  .rec { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--faint); padding:14px 8px; font-variant-numeric:tabular-nums; }
+  .rec i { width:6px; height:6px; border-radius:50%; background:var(--rec); opacity:.55; } .running .rec i { opacity:1; }
+
+  .modes { display:flex; gap:2px; padding:0 8px 8px; overflow-x:auto; flex:none; scrollbar-width:none; }
+  .modes button { font-size:13px; white-space:nowrap; color:var(--muted); border:1px solid transparent; border-radius:999px; padding:7px 11px; }
+  .modes button[aria-selected="true"] { color:var(--text); background:var(--card); border-color:var(--line2); font-weight:600; }
+  .modetitle { display:none; margin:0 14px 8px; font-size:14px; font-weight:600; text-align:left; padding:6px 0; }
+  .modetitle small { font-weight:400; color:var(--muted); font-size:12px; }
+  .running .modes { display:none; } .running .modetitle { display:block; }
+
+  /* ---------- the view: camera fills it; everything else floats over the picture ---------- */
+  .view { flex:1; position:relative; overflow:hidden; min-height:0; background:#000; border-radius:22px 22px 0 0; }
+  .cam { position:absolute; inset:0; overflow:hidden; background:radial-gradient(120% 90% at 50% 20%, #5b5146 0%, #3a352f 45%, #1f1d1b 100%); transition:all .32s cubic-bezier(.2,.8,.2,1); }
+  .cam svg.person { position:absolute; inset:0; width:100%; height:100%; transform:scale(var(--b,1)); transform-origin:50% 62%; }
+  .box { position:absolute; border:1.5px solid rgba(255,255,255,.75); border-radius:10px; }
+  .box.face { left:36%; top:17%; width:28%; height:19%; }
+  .box.chest { left:20%; top:47%; width:60%; height:27%; border-color:var(--accent); }
+  .box small { position:absolute; left:6px; top:-17px; font-size:10px; color:rgba(255,255,255,.8); }
+  .lost .box { opacity:.25; border-style:dashed; }
+  .noCam .cam { background:#101215; } .noCam .cam svg.person, .noCam .box { display:none; }
+
+  .glass { background:var(--glass); -webkit-backdrop-filter:blur(14px) saturate(1.2); backdrop-filter:blur(14px) saturate(1.2); border:1px solid rgba(255,255,255,.1); }
+  .hud { position:absolute; left:12px; top:12px; display:flex; align-items:center; gap:10px; padding:8px 14px 8px 8px; border-radius:999px; transition:opacity .2s; }
+  .ring { width:64px; height:64px; border-radius:50%; border:3px solid rgba(255,255,255,.28); display:grid; place-items:center; transition:border-color .1s; flex:none; }
+  .ring b { font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .ring.in { border-color:var(--accent); } .ring.out { border-color:var(--ok); }
+  .hud .txt { font-size:12px; color:rgba(255,255,255,.8); line-height:1.35; } .hud .txt b { display:block; font-size:13px; color:#fff; font-weight:600; min-width:74px; }
+  .dim .hud { opacity:.45; }
+  .layout { position:absolute; right:12px; top:12px; height:36px; padding:0 12px 0 10px; border-radius:999px; font-size:12px; display:flex; align-items:center; gap:6px; z-index:3; }
+  .layout svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  .alert { position:absolute; left:14px; right:14px; top:38%; transform:translateY(-50%); padding:16px 16px 15px; border-radius:16px; background:rgba(46,32,6,.72); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+           border:1px solid var(--warn); border-left-width:4px; z-index:4; }
+  .alert[hidden], .pill[hidden], .tray[hidden], .toast[hidden], .menu[hidden] { display:none; }
+  .alert strong { display:block; font-size:23px; line-height:1.2; font-weight:650; letter-spacing:-.01em; }
+  .alert span { display:block; font-size:15px; margin-top:4px; } .alert em { display:block; font-style:normal; font-size:12px; color:rgba(255,255,255,.7); margin-top:6px; }
+  .pill { position:absolute; left:12px; top:12px; display:inline-flex; align-items:center; gap:6px; font-size:13px; padding:6px 11px; border-radius:999px; z-index:3; }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--warn); }
+
+  .bottom { position:absolute; left:0; right:0; bottom:0; padding:28px 12px 14px; background:linear-gradient(180deg, transparent, rgba(0,0,0,.62) 34%, rgba(0,0,0,.82)); z-index:2; }
+  .strip { height:50px; position:relative; margin:0 0 8px; }
+  .strip canvas, .bigchart canvas { position:absolute; inset:0; width:100%; height:100%; }
+  .strip small { position:absolute; left:2px; top:-14px; font-size:10px; color:rgba(255,255,255,.6); letter-spacing:.04em; text-transform:uppercase; }
+  .tray { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; padding:2px 0 10px; }
+  .chip { font-size:13px; color:#fff; border-radius:999px; padding:0 12px; height:38px; display:inline-flex; align-items:center; gap:6px; }
+  .chip i { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.6); }
+  .chip[aria-pressed="true"] i { background:var(--accent); box-shadow:none; }
+  .chip[aria-pressed="false"] { color:rgba(255,255,255,.72); } .chip[disabled] { opacity:.4; }
+  .actions { display:flex; gap:8px; align-items:center; }
+  .tune { width:46px; height:46px; border-radius:50%; display:grid; place-items:center; flex:none; position:relative; }
+  .tune svg { width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
+  .tune[aria-expanded="true"] { border-color:var(--accent); color:var(--accent); }
+  .tune u { position:absolute; right:9px; top:9px; width:6px; height:6px; border-radius:50%; background:var(--accent); display:none; } .tune.has u { display:block; }
+  .btn { flex:1; font-size:16px; font-weight:600; border-radius:999px; height:46px; }
+  .primary { background:var(--accent); color:#06121f; } .secondary { color:#fff; } .danger { background:rgba(120,30,34,.7); color:#ffb3b5; border:1px solid rgba(255,140,144,.35); }
+
+  /* ---------- chart focus: small camera inset, large chart ---------- */
+  .chartPane { position:absolute; inset:0; display:none; flex-direction:column; padding:64px 16px 150px; background:var(--bg); }
+  .chart .chartPane { display:flex; }
+  .chart .cam { inset:auto; right:12px; top:58px; width:92px; height:124px; border-radius:14px; border:1px solid var(--line2); z-index:3; }
+  .chart .cam .box small { display:none; }
+  .chart .hud, .chart .strip { display:none; }
+  .chart .bottom { background:none; }
+  .chart .alert { top:auto; bottom:160px; transform:none; background:rgba(240,180,69,.1); }
+  .big { display:flex; align-items:baseline; gap:8px; }
+  .big b { font-size:64px; font-weight:300; letter-spacing:-.04em; line-height:1; font-variant-numeric:tabular-nums; }
+  .big span { font-size:13px; color:var(--muted); }
+  .you { font-size:13px; color:var(--accent); height:20px; margin-top:4px; }
+  .stats { display:flex; gap:18px; font-size:12px; color:var(--muted); margin-top:6px; } .stats b { color:var(--text); font-weight:600; font-variant-numeric:tabular-nums; }
+  .bigchart { flex:1; position:relative; margin-top:14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); min-height:120px; }
+  .dimc .big b, .dimc .bigchart { opacity:.35; }
+
+  /* Coach and Guide keep their own screens; shown here only as a placeholder */
+  .other { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; gap:6px; background:var(--bg); color:var(--muted); text-align:center; padding:0 30px 120px; }
+  .other b { font-size:44px; font-weight:650; color:var(--text); letter-spacing:.02em; }
+  .isOther .other { display:flex; } .isOther .cam, .isOther .hud, .isOther .layout, .isOther .strip, .isOther .chartPane { display:none; }
+  .isOther .bottom { background:none; }
+
+  .toast { position:absolute; left:12px; right:12px; top:8px; background:rgba(22,26,32,.92); border:1px solid var(--line2); border-radius:12px; padding:9px 12px; font-size:13px; display:flex; justify-content:space-between; gap:10px; z-index:6; }
+  .toast button { color:var(--accent); font-weight:600; }
+  .menu { position:absolute; left:8px; right:8px; top:88px; background:var(--card); border:1px solid var(--line2); border-radius:14px; padding:6px; box-shadow:0 16px 40px rgba(0,0,0,.6); z-index:7; }
+  .menu button { display:block; width:100%; text-align:left; font-size:15px; border-radius:10px; padding:10px 12px; }
+  .menu button small { display:block; color:var(--muted); font-size:12px; }
+  .menu button[aria-current="true"] { background:rgba(110,168,255,.1); }
+  .menu p { font-size:12px; color:var(--muted); padding:8px 12px 6px; border-top:1px solid var(--line); margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="phone" id="phone">
+  <header class="topbar">
+    <div class="tl">
+      <button class="icon" aria-label="Settings and history"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.900 4.900l2.100 2.100M17 17l2.100 2.100M4.900 19.100L7 17M17 7l2.100-2.100"/></svg></button>
+      <span class="ver">v0.12.1</span>
+    </div>
+    <div class="tr">
+      <button class="rec" id="rec" aria-label="Debug recording on. Open details"><i aria-hidden="true"></i><span id="recT">debug</span></button>
+      <button class="icon" aria-label="All sound on"><svg viewBox="0 0 24 24"><path d="M4 9.500h3l5-4v13l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button>
+      <button class="icon" aria-label="Switch camera"><svg viewBox="0 0 24 24"><path d="M4 8h3l1.500-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.500" r="3.200"/></svg></button>
+    </div>
+  </header>
+
+  <nav class="modes" id="modes" role="tablist" aria-label="Mode">
+    <button role="tab" data-m="coach">Coach</button>
+    <button role="tab" data-m="guide">Guide</button>
+    <button role="tab" data-m="resp" aria-selected="true">Respiration Tracker</button>
+    <button role="tab" data-m="coh">Coherence</button>
+  </nav>
+  <button class="modetitle" id="modeTitle" aria-haspopup="menu"><span id="modeName">Respiration Tracker</span> ▾ <small>· tap to switch</small></button>
+  <div class="menu" id="menu" role="menu" hidden>
+    <button role="menuitem" data-m="coach">Coach<small>Leads you to a slower pattern · camera optional</small></button>
+    <button role="menuitem" data-m="guide">Guide<small>Plays the pattern · no camera</small></button>
+    <button role="menuitem" data-m="resp">Respiration Tracker<small>Measures your breathing rate · needs your chest in view</small></button>
+    <button role="menuitem" data-m="coh">Coherence<small>Heart and breath · fingertip or hands-free</small></button>
+    <p>Switching saves this session and continues in the new mode. Nothing is discarded.</p>
+  </div>
+
+  <main class="view" id="view">
+    <div class="cam" id="cam">
+      <svg class="person" viewBox="0 -20 400 640" preserveAspectRatio="xMidYMin slice" aria-hidden="true"><defs><linearGradient id="sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c9a48a"/><stop offset="1" stop-color="#a98469"/></linearGradient></defs>
+        <path d="M30 700V430c0-112 62-166 170-166s170 54 170 166v270z" fill="#2c3440"/><rect x="176" y="196" width="48" height="80" rx="20" fill="url(#sk)"/><ellipse cx="200" cy="150" rx="62" ry="76" fill="url(#sk)"/><path d="M138 132c4-60 120-60 124 0-30-26-94-26-124 0z" fill="#2a211c"/></svg>
+      <div class="box face"><small>face</small></div><div class="box chest"><small>chest</small></div>
+    </div>
+
+    <div class="chartPane" id="chartPane">
+      <div class="big"><b id="bigBpm">9.8</b><span>breaths/min</span></div>
+      <div class="you" id="bigYou"></div>
+      <div class="stats"><span>Time <b id="sTime">0:00</b></span><span>Breaths <b id="sBr">0</b></span><span>Avg <b>9.6</b></span></div>
+      <div class="bigchart"><canvas id="cvBig"></canvas></div>
+    </div>
+
+    <div class="other" id="other"><b id="otherBig">5 · 1 · 5 · 1</b><span id="otherSub">in · hold · out · hold</span><span style="font-size:12px;margin-top:10px">This mode keeps its own screen. The mockup shows it only so switching can be tried.</span></div>
+
+    <div class="hud glass" id="hud"><div class="ring" id="ring"><b id="bpm">9.8</b></div><div class="txt"><b id="you">breaths/min</b><span id="hudStats">0:00 · 0 breaths</span></div></div>
+    <div class="pill glass" id="pill" hidden></div>
+    <button class="layout glass" id="layout" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18l5-6 4 3 7-9"/></svg><span id="layoutT">Chart focus</span></button>
+
+    <div class="alert" id="alert" role="alert" hidden><strong id="aT"></strong><span id="aF"></span><em>Respiration Tracker is waiting. It resumes by itself.</em></div>
+    <div class="toast" id="toast" role="status" hidden><span id="toastT"></span><button id="toastB" type="button">Undo</button></div>
+
+    <div class="bottom" id="bottom">
+      <div class="strip" id="strip"><small>your breath</small><canvas id="cvStrip"></canvas></div>
+      <div class="tray" id="tray">
+        <button class="chip glass" id="pace" type="button"><span id="paceT">Pace 6/min</span> ▾</button>
+        <button class="chip glass" id="gtone" type="button" aria-pressed="true"><i aria-hidden="true"></i>Guide tone</button>
+        <button class="chip glass" id="dtone" type="button" aria-pressed="false"><i aria-hidden="true"></i>Detection tone</button>
+      </div>
+      <div class="actions" id="actions"></div>
+    </div>
+  </main>
+</div>
+
+<div class="side">
+  <h2>Try the states</h2>
+  <div class="sim" id="simRun"><button data-r="idle" aria-pressed="true">Before Start</button><button data-r="running">Running</button><button data-r="paused">Paused</button></div>
+  <div class="sim" id="simTrack"><button data-t="ok" aria-pressed="true">Tracking fine</button><button data-t="chest">Chest not in view</button><button data-t="lost">Not found</button><button data-t="focus">Dark or blurry</button></div>
+  <div class="sim"><button id="simLayout">Toggle Chart focus</button></div>
+
+  <h2>Respiration Tracker, camera first</h2>
+  <ul>
+    <li><b>The camera is the screen.</b> It fills everything under the mode row, edge to edge, cropped to cover. Nothing sits beside it.</li>
+    <li><b>Reading floats on the picture:</b> a small glass capsule top left with the ring, rate and "you ↑ in / ↓ out"; time and breaths on its second line.</li>
+    <li><b>The trace is a slim strip</b> along the bottom edge over the video, 50 px, so the Google-Fit-style line stays but no longer owns the page.</li>
+    <li><b>Controls do not take height.</b> Start, Pause and Stop are one 46 px row over a dark fade. The three chips (pace, Guide tone, Detection tone) show before Start, then fold into one round button while running; a dot on it means a tone is on.</li>
+    <li><b>Tracking problems appear on the video</b>, large, where the fix is visible; the reading dims.</li>
+    <li><b>Chart focus</b> (top right, remembered per mode) swaps to yesterday's look: big number, big chart, camera as a small inset. One tap back.</li>
+    <li>Coach and Guide keep their own screens. Mode tabs, mid-session switching, the debug dot and the tone chips behave as in the first mockup.</li>
+  </ul>
+</div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id), phone = $('phone'), view = $('view');
+  const NAMES = { coach:'Coach', guide:'Guide', resp:'Respiration Tracker', coh:'Coherence' };
+  const NEEDS = { coach:false, guide:false, resp:true, coh:true };
+  const MSG = { chest:['Chest not in view','Move the phone back a little.'], lost:['Can’t see you','Keep your face and shoulders in the frame.'], focus:['Picture too dark or blurry','Add light, or tap the picture to refocus.'] };
+  let mode = 'resp', run = 'idle', track = 'ok', pace = 'Pace 6/min', sec = 0, t0 = performance.now(), trayOpen = false, breaths = 0;
+  const layouts = { resp: (() => { try { return localStorage.getItem('mock.breathe.layout.resp') || 'camera'; } catch (e) { return 'camera'; } })() };
+
+  function render() {
+    phone.classList.toggle('running', run === 'running');
+    document.querySelectorAll('#modes button').forEach(b => b.setAttribute('aria-selected', b.dataset.m === mode));
+    document.querySelectorAll('#menu button').forEach(b => b.setAttribute('aria-current', b.dataset.m === mode));
+    $('modeName').textContent = NAMES[mode];
+    const camMode = mode === 'resp' || mode === 'coh', chart = camMode && layouts.resp === 'chart';
+    view.classList.toggle('isOther', !camMode); view.classList.toggle('chart', chart);
+    $('layout').setAttribute('aria-pressed', chart); $('layoutT').textContent = chart ? 'Camera' : 'Chart focus';
+    $('otherBig').textContent = mode === 'guide' ? '5 · 1 · 5 · 1' : '5 · 1 · 5 · 1'; $('otherSub').textContent = mode === 'coach' ? 'Coach lane · camera in its small tile' : 'Guide · no camera';
+    const bad = track !== 'ok' && mode !== 'guide', block = bad && NEEDS[mode];
+    $('alert').hidden = !block; if (block) { $('aT').textContent = MSG[track][0]; $('aF').textContent = MSG[track][1]; }
+    $('pill').hidden = !(bad && !NEEDS[mode]); if (bad && !NEEDS[mode]) $('pill').textContent = MSG[track][0] + ' · guiding on schedule';
+    view.classList.toggle('dim', block); view.classList.toggle('lost', bad); $('chartPane').classList.toggle('dimc', block);
+    $('bpm').textContent = $('bigBpm').textContent = block || run === 'idle' ? '--' : '9.8';
+    const tm = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    $('hudStats').textContent = tm + ' · ' + breaths + ' breaths'; $('sTime').textContent = tm; $('sBr').textContent = breaths;
+    $('recT').textContent = run === 'idle' ? 'debug' : 'rec ' + tm;
+    // chips: shown before Start; folded into the round button while running or paused
+    const showTray = run === 'idle' || trayOpen;
+    $('tray').hidden = !showTray;
+    $('paceT').textContent = camMode ? pace : 'Pattern 5·1·5·1'; $('dtone').style.display = mode === 'guide' ? 'none' : '';
+    const anyTone = $('gtone').getAttribute('aria-pressed') === 'true' || $('dtone').getAttribute('aria-pressed') === 'true';
+    const tune = '<button class="tune glass' + (anyTone ? ' has' : '') + '" id="tune" aria-label="Pace and tones" aria-expanded="' + trayOpen + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><u></u></button>';
+    $('actions').innerHTML = run === 'idle' ? '<button class="btn primary" data-go="running">Start</button>'
+      : run === 'running' ? tune + '<button class="btn secondary glass" data-go="paused">Pause</button><button class="btn danger" data-go="idle">Stop</button>'
+      : tune + '<button class="btn primary" data-go="running">Resume</button><button class="btn danger" data-go="idle">Stop</button>';
+    document.querySelectorAll('#simRun button').forEach(b => b.setAttribute('aria-pressed', b.dataset.r === run));
+    document.querySelectorAll('#simTrack button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === track));
+  }
+
+  // ---- fake breath signal, shared by the strip and the big chart
+  const hist = []; let lastPhase = 0, ac = null;
+  function sample(t) { return Math.sin(t * 2 * Math.PI / 6.1) * .78 + Math.sin(t * 2 * Math.PI / 2.3) * .06 + Math.sin(t * 1.7) * .04; }
+  function drawOn(cv, secs, lw, grid) {
+    const r = cv.getBoundingClientRect(); if (!r.width) return; const d = Math.min(2, devicePixelRatio || 1);
+    if (cv.width !== Math.round(r.width * d)) { cv.width = r.width * d; cv.height = r.height * d; }
+    const c = cv.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, r.width, r.height);
+    const W = r.width, H = r.height, now = performance.now() / 1000;
+    if (grid) { c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = 1; for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(0, Math.round(H * i / 4) + .5); c.lineTo(W, Math.round(H * i / 4) + .5); c.stroke(); } }
+    c.lineWidth = lw; c.lineJoin = c.lineCap = 'round'; c.beginPath(); let open = false;
+    for (const s of hist) { const x = W - 10 - (now - s.t) * (W / secs); if (x < -5) continue; if (s.v === null) { open = false; continue; }
+      const y = H / 2 - s.v * (H / 2 - lw - 2); if (!open) { c.moveTo(x, y); open = true; } else c.lineTo(x, y); }
+    const g = c.createLinearGradient(0, 0, W, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.25, 'rgba(255,255,255,.95)'); g.addColorStop(1, '#fff'); c.strokeStyle = g; c.stroke();
+    const head = hist[hist.length - 1]; if (head && head.v !== null) { c.fillStyle = '#fff'; c.beginPath(); c.arc(W - 10, H / 2 - head.v * (H / 2 - lw - 2), lw + 1.5, 0, 7); c.fill(); }
+  }
+  function tick() {
+    const now = performance.now() / 1000, live = run === 'running' && track === 'ok' && mode !== 'guide';
+    const v = live ? sample(now) : null; hist.push({ t: now, v }); while (hist.length && now - hist[0].t > 32) hist.shift();
+    $('cam').style.setProperty('--b', (1 + (live ? v : 0) * .012).toFixed(4));
+    if (live) { const d = sample(now + .02) - v, ph = d > 0 ? 1 : -1;
+      if (ph !== lastPhase && lastPhase !== 0) { const isIn = ph > 0; if (isIn) breaths++;
+        $('you').textContent = $('bigYou').textContent = isIn ? 'you ↑ in' : 'you ↓ out'; const ring = $('ring'); ring.classList.add(isIn ? 'in' : 'out'); setTimeout(() => ring.classList.remove('in', 'out'), 280);
+        if ($('dtone').getAttribute('aria-pressed') === 'true') { try { ac = ac || new AudioContext(); const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = isIn ? 880 : 587;
+          g.gain.setValueAtTime(.15, ac.currentTime); g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + .09); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + .1); } catch (e) {} } }
+      lastPhase = ph; }
+    else if (run !== 'running') { $('you').textContent = 'breaths/min'; $('bigYou').textContent = ''; }
+    drawOn($('cvStrip'), 14, 2.2, false); drawOn($('cvBig'), 30, 2.6, true);
+    requestAnimationFrame(tick);
+  }
+  let timer = null;
+  function setRun(r) { run = r; clearInterval(timer); if (r === 'idle') { sec = 0; breaths = 0; trayOpen = false; } if (r === 'running') timer = setInterval(() => { sec++; render(); }, 1000); $('menu').hidden = true; render(); }
+  function toast(text, undo) { $('toastT').textContent = text; $('toastB').style.display = undo ? '' : 'none'; $('toastB').onclick = () => { undo(); $('toast').hidden = true; render(); }; $('toast').hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').hidden = true, 5000); }
+  function switchMode(m) { if (m === mode) { $('menu').hidden = true; return; } const was = NAMES[mode], live = run !== 'idle'; mode = m; $('menu').hidden = true;
+    if (live) { toast(was + ' session saved. Now: ' + NAMES[m], null); sec = 0; breaths = 0; if (run === 'paused') setRun('idle'); } render(); }
+  function setLayout(chart) { layouts.resp = chart ? 'chart' : 'camera'; try { localStorage.setItem('mock.breathe.layout.resp', layouts.resp); } catch (e) {} render(); }
+
+  $('modes').onclick = e => { const b = e.target.closest('button'); if (b) switchMode(b.dataset.m); };
+  $('menu').onclick = e => { const b = e.target.closest('button'); if (b) switchMode(b.dataset.m); };
+  $('modeTitle').onclick = () => $('menu').hidden = !$('menu').hidden;
+  $('actions').onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.id === 'tune') { trayOpen = !trayOpen; render(); } else setRun(b.dataset.go); };
+  $('simRun').onclick = e => { const b = e.target.closest('button'); if (b) setRun(b.dataset.r); };
+  $('simTrack').onclick = e => { const b = e.target.closest('button'); if (b) { track = b.dataset.t; render(); } };
+  $('layout').onclick = $('simLayout').onclick = () => setLayout(layouts.resp !== 'chart');
+  ['gtone', 'dtone'].forEach(id => $(id).onclick = () => { $(id).setAttribute('aria-pressed', $(id).getAttribute('aria-pressed') !== 'true'); render(); });
+  $('pace').onclick = () => { if (mode !== 'resp' && mode !== 'coh') return; const o = ['Pace off', 'Pace 6/min', 'Pace 8/min', 'Pace 10/min', 'Pace 12/min'], prev = pace; pace = o[(o.indexOf(pace) + 1) % o.length];
+    $('gtone').disabled = pace === 'Pace off'; if (run !== 'idle') toast(pace + ' from the next breath', () => { pace = prev; $('gtone').disabled = pace === 'Pace off'; }); render(); };
+  const q = new URLSearchParams(location.search);
+  if (q.get('layout')) layouts.resp = q.get('layout'); if (q.get('track')) track = q.get('track');
+  render(); if (q.get('run')) setRun(q.get('run')); requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

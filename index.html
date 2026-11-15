@@ -78,6 +78,8 @@
     <video id="video" playsinline muted autoplay></video>
     <canvas id="nativeView" hidden></canvas>
     <canvas id="overlay"></canvas>
+    <canvas id="respTrace" aria-label="Live breathing trace" hidden></canvas>
+    <button id="chartFocusBtn" type="button" class="layout-focus" aria-pressed="false" hidden>Chart focus</button>
     <div id="camSlot" class="cam-slot" hidden aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M21 6.5l-4 4V7a1 1 0 0 0-1-1H9.82L21 17.18V6.5zM3.27 2 2 3.27 4.73 6H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"/></svg>
       <span id="camSlotText">Tracking off</span>
@@ -104,6 +106,7 @@
       <button id="detectionToneBtn" type="button" aria-pressed="false" title="Short high tick for detected inhale; low tick for exhale">Detection tone</button>
     </div>
     <div class="controls" id="controls">
+      <button id="respTuneBtn" type="button" class="resp-tune" aria-label="Show pace and tone controls" aria-expanded="false" aria-controls="quickControls" hidden>Tune</button>
       <button class="btn primary" id="startBtn">Start</button>
       <button class="btn secondary" id="pauseBtn" hidden>Pause</button>
       <button class="btn danger" id="stopBtn" hidden>Stop</button>
@@ -210,6 +213,6 @@
   </div>
 
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.12.2"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.13.0"></script>
 </body>
 </html>

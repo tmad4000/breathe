@@ -1,7 +1,7 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.12.2';
+const VERSION = '0.13.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
@@ -36,6 +36,10 @@ const STORE_KEY = 'breathe.sessions.v1';
 const RING_LEN = 276.46;
 
 const $ = (id) => document.getElementById(id);
+let chartFocus = localStorage.getItem('breathe.layout.respiration.v1') === 'chart', respTrayOpen = false;
+const respAnchors = [...document.querySelectorAll('.card,section.stats:not(#coachStats),#trackingNotice,#switchNotice')].map(el=>{
+  const anchor=document.createComment('mode layout anchor');el.before(anchor);return {el,anchor};
+});
 const video = $('video');
 const overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -343,6 +347,7 @@ function viewMapping() {
 function drawOverlay(faceOk) {
   const live = running && !paused && faceOk && chest && performance.now() >= motionUntil;
   showPhase(live ? session?.phase() : null, live ? session.turns.length : 0);
+  if(mode()==='respiration'){drawRespirationOverlay(faceOk);return;}
   // In the guided modes the pattern view is drawn by its own loop, camera or not.
   if (coach && running) { if (live) coachSeenAt = performance.now(); return; }
   const { dpr, sw, sh, rect } = viewMapping();
@@ -844,6 +849,7 @@ function setSound(on) {
     $('ringFill').style.strokeDashoffset = RING_LEN * (1 - level);
     if (coach) drawLane();
   }
+  if(mode()==='respiration')drawRespirationTrace();
   if (running && coach && performance.now() - lastCoachUi > 250) { lastCoachUi = performance.now(); updateCoachUi(lastCoachUi); }
   requestAnimationFrame(ringLoop);
 })();
@@ -876,7 +882,7 @@ function setControls() {
 async function start(continuation = false) {
   if (starting || running) return;
   localStorage.setItem('breathe.debug.notice','seen'); $('debugNotice').hidden=true;
-  starting=true; syncQuickControls();
+  respTrayOpen=false; starting=true; syncQuickControls();
   if (!continuation && !continuedFrom) { groupId = crypto.randomUUID(); }
   cameraFailure = ''; trackingBadSince = trackingGoodSince = null;
   $('startBtn').disabled = true;
@@ -1296,6 +1302,7 @@ new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paus
 
 const modeChanged = $('modeSelect').onchange;
 $('modeSelect').onchange = async () => {
+  respTrayOpen=false;
   if(starting){$('modeSelect').value=sessionMode??'coach';return;}
   const next = mode(), oldMode = sessionMode, wasRunning = running, resume = running && !paused;
   preserveCameraForMode=wasRunning&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next);
@@ -1305,6 +1312,43 @@ $('modeSelect').onchange = async () => {
   if (resume) await start(true);
 };
 
+
+function renderRespirationLayout() {
+  const resp=mode()==='respiration';
+  document.body.classList.toggle('respiration',resp);document.body.classList.toggle('chart-focus',resp&&chartFocus);
+  document.body.classList.toggle('resp-tray-open',resp&&respTrayOpen);
+  for(const {el,anchor} of respAnchors){if(resp){if(el.parentElement!==$('stage'))$('stage').append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
+  $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;$('respTuneBtn').hidden=!resp||!running;
+  $('chartFocusBtn').setAttribute('aria-pressed',String(chartFocus));$('chartFocusBtn').textContent=chartFocus?'Camera':'Chart focus';
+  $('respTuneBtn').setAttribute('aria-expanded',String(respTrayOpen));
+  $('quickControls').inert=resp&&running&&!paused&&!respTrayOpen;
+  $('respTuneBtn').classList.toggle('has-tone',guideToneOn||$('ownSoundToggle').checked);
+}
+$('chartFocusBtn').onclick=()=>{chartFocus=!chartFocus;localStorage.setItem('breathe.layout.respiration.v1',chartFocus?'chart':'camera');debugEvent('layout',{mode:'respiration',layout:chartFocus?'chart':'camera'});renderRespirationLayout();drawRespirationOverlay(performance.now()-faceSeenAt<FACE_LOST_MS);};
+$('respTuneBtn').onclick=()=>{respTrayOpen=!respTrayOpen;renderRespirationLayout();};
+function drawRespirationOverlay(faceOk) {
+  const dpr=window.devicePixelRatio||1,sw=overlay.clientWidth,sh=overlay.clientHeight;
+  if(overlay.width!==Math.round(sw*dpr)||overlay.height!==Math.round(sh*dpr)){overlay.width=Math.round(sw*dpr);overlay.height=Math.round(sh*dpr);}
+  octx.setTransform(dpr,0,0,dpr,0,0);octx.clearRect(0,0,sw,sh);
+  if(!faceOk||!PW||!PH)return;
+  const w=chartFocus?92:sw,h=chartFocus?124:sh,x=chartFocus?sw-w-12:0,y=chartFocus?58:0;
+  const k=Math.max(w/PW,h/PH),ox=x+(w-PW*k)/2,oy=y+(h-PH*k)/2;
+  octx.save();octx.beginPath();octx.rect(x,y,w,h);octx.clip();octx.lineWidth=1.5;octx.strokeStyle='rgba(255,255,255,.75)';octx.setLineDash([3,4]);
+  for(const r of [face,chest]){if(!r)continue;const left=ox+r.x*k,rw=r.w*k;octx.strokeRect(mirrored?x+w-(left-x)-rw:left,oy+r.y*k,rw,r.h*k);}
+  octx.restore();
+}
+function drawRespirationTrace() {
+  const canvas=$('respTrace'),ctx=canvas.getContext('2d'),dpr=devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
+  if(!w||!h)return;if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.strokeStyle='rgba(255,255,255,.2)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+  const live=running&&!paused&&performance.now()-faceSeenAt<FACE_LOST_MS&&chest&&performance.now()>=motionUntil;
+  canvas.classList.toggle('signal-lost',!live);
+  if(!session)return;const wave=session.recentWaveform(chartFocus?30:10);if(wave.length<2)return;
+  const peak=wave.reduce((m,v)=>Math.max(m,Math.abs(v)),1e-3),n=chartFocus?300:100;
+  ctx.strokeStyle='#9ac7ff';ctx.lineWidth=chartFocus?2.5:2;ctx.beginPath();
+  wave.forEach((v,i)=>{const x=(i+n-wave.length)/(n-1)*w,y=h/2-v/peak*h*.38;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();
+  const x=w,y=h/2-wave.at(-1)/peak*h*.38;ctx.beginPath();ctx.arc(x-3,y,3,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+}
 
 function cameraTelemetry() {
   const settings = stream?.getVideoTracks?.()[0]?.getSettings?.() ?? {};
@@ -1370,6 +1414,7 @@ function changePattern(value, undo = true) {
   renderIntro(); syncQuickControls();
 }
 function syncQuickControls() {
+  renderRespirationLayout();
   $('coherenceChoice').disabled=starting;
   $('coherenceChoiceLabel').hidden=chestOnly(); $('coherenceChoice').value=chestOnly()?'finger':mode();
   $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided()||!running;

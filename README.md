@@ -233,3 +233,13 @@ The Settings **Send feedback** link is part of Jacob's separate feedback rollout
 It loads World Issue Tracker code only when tapped and opens the Breathe board.
 Ordinary app use makes no request to WIT. Submitting feedback is an explicit user
 action; debug recordings are not attached or uploaded by this integration.
+
+## v0.13.0: camera-first Respiration Tracker
+
+The camera fills the Tracker view by default. Rate, phase and session readings
+float above it, with a slim breath trace along the bottom. While running, Tune
+opens the pace and tone controls without taking height from the camera.
+**Chart focus** swaps to a large trace and small camera inset; **Camera** switches
+back. This preference is remembered for Respiration Tracker only. Coach, Guide
+and Coherence retain their own views. The original design and the new mockup
+are saved under `docs/design/2026-11-15-respiration-tracker/`.
