@@ -26,7 +26,7 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.addInitScript(audioHook);
   await page.goto(base);
-  await page.selectOption('#modeSelect', 'guide');
+  await page.selectOption('#modeSelect', 'guide', {force:true});
   assert.ok(await page.locator('#flipBtn').isHidden(), 'no camera switch in Guide');
   assert.ok(await page.locator('#soundBtn').isVisible());
   await page.click('#startBtn');
@@ -59,7 +59,7 @@ try {
   await page.mouse.click(195, 20);   // the dimmed area above the sheet
   assert.ok(await page.locator('#historySheet').isHidden(), 'a tap outside closes settings');
   assert.match(await page.title(), /^Guide \(no camera\) — Breathe$/);
-  await page.selectOption('#modeSelect', 'respiration');
+  await page.selectOption('#modeSelect', 'respiration', {force:true});
   assert.ok(await page.locator('#flipBtn').isVisible(), 'camera switch in Respiration');
   await page.close();
 

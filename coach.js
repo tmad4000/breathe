@@ -56,6 +56,22 @@ export class Coach {
     this.#extend(now);
   }
 
+  // Keep the current breath intact; replan after the next completed exhale.
+  setPattern(pattern, now) {
+    if (!Array.isArray(pattern) || pattern.length !== 4 || pattern.some(x => !Number.isFinite(x) || x < 0) || pattern[0] <= 0 || pattern[2] <= 0) throw new Error('Invalid breathing pattern');
+    this.pattern = [...pattern]; this.full = pattern.reduce((a, b) => a + b, 0);
+    this.minCycle = Math.min(this.full, MIN_CYCLE_S);
+    this.cycle = this.adaptive ? clamp(this.cycle, this.minCycle, this.full) : this.full;
+    this.#repace(now); this.#note(now, 'pattern-change');
+  }
+
+  // Pause time never advances the guide or its future segments.
+  shiftTime(seconds) {
+    this.t0 += seconds; this.checked += seconds;
+    for (const s of this.segs) { s.t0 += seconds; s.t1 += seconds; if (s.cut !== undefined) s.cut += seconds; }
+    for (const t of this.turns) t.t += seconds;
+  }
+
   get bpm() { return 60 / this.cycle; }
   get target() { return 60 / this.full; }
 

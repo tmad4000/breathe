@@ -1,11 +1,14 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
 import { isNewerVersion } from './update.js';
+import { DebugRecorder } from './debug-recorder.js';
+import { BreathFeedback } from './breath-feedback.js';
+let breathFeedback = new BreathFeedback();
 let coach = null, coachLastTurn = -Infinity;
 const chestOnly = () => ['respiration', 'coach', 'guide'].includes(mode());   // modes with no pulse sensing
 const guided = () => mode() === 'coach' || mode() === 'guide';                // modes that show the breath pattern
@@ -57,7 +60,12 @@ let mirrored = true;
 const TEST_SRC = new URLSearchParams(location.search).get('src');
 let session = null;
 let running = false;
-let paused = false;
+let paused = false, starting = false, preserveCameraForMode = false, sessionStartT = 0;
+let motionBuffer = [];
+let cameraFailure = '', trackingBadSince = null, trackingGoodSince = null;
+let groupId = null, continuedFrom = null;
+let pausedAt = 0, sessionMode = null, sessionChanges = [], pendingPace = null;
+let guideToneOn = localStorage.getItem('breathe.guideTone') !== 'off';
 let wakeLock = null;
 
 let PW = 0, PH = 0, CW = 0, CH = 0, prevGray = null, curGray = null, havePrev = false;
@@ -65,11 +73,18 @@ let face = null, faceSeenAt = -Infinity, chest = null, chestHidden = false;
 let frameIdx = 0, lastDetectT = 0, lastTrackedT = -Infinity, motionUntil = 0;
 let lastUiT = 0, waveScale = 0, ringLevel = 0;
 let lastSummary = null;
-let debugLog = null;
+let debugLog = null, telemetryAt = -Infinity, telemetryFrameAt = null;
+const debugEvent = (event, data = {}) => window.breatheDebug?.event?.({event,t:performance.now(),...data});
 let guideStart = 0;
 let steadySince = null;
 let audioCtx = null, lastGuideInhale = null;
 let recorder = null, clipChunks = [], clipBlob = null;
+
+window.breatheDebug = new DebugRecorder($('debugPanel'), $('debugChip'));
+$('debugChip').onclick = () => { openSheet('historySheet'); $('debugPanel').scrollIntoView({block:'start'}); };
+$('skipDebug').onclick = () => { if(running||starting)return; window.breatheDebug.skip=true; start(); };
+$('debugNotice').hidden = localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled;
+$('guideToneToggle').onchange = () => { guideToneOn=$('guideToneToggle').checked; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); syncQuickControls(); };
 
 $('version').textContent = VERSION + (window.__breatheNativeInfo?.shell ? ` · app ${window.__breatheNativeInfo.shell}` : '');
 $('topVersion').textContent = `v${VERSION}`;
@@ -219,6 +234,7 @@ function setChest(rect) {
 }
 
 function processFrame(t, mediaTime) {
+  const processingStart = performance.now(), frameMs = telemetryFrameAt === null ? null : t-telemetryFrameAt; telemetryFrameAt=t;
   if (mode() !== 'finger' && detector && frameIdx++ % DETECT_EVERY === 0 && t > lastDetectT) {
     lastDetectT = t;
     detectFace(t);
@@ -250,11 +266,15 @@ function processFrame(t, mediaTime) {
       const dt = t - lastTrackedT < 300 ? (t - lastTrackedT) / 1000 : 1 / 30;
       session.push(dt, flows, CH);
       debugLog?.push({ t, dt, valid: flows.filter(Number.isFinite).length });
+      motionBuffer.push({dt,scalePx:CH,flows:Array.from(flows,x=>Number.isFinite(x)?x:null)});
+      if (t-telemetryAt >= 100) {
+        telemetryAt=t;
+        debugEvent('signal', {signalTime:session.displayT,dt,sourceFrames:motionBuffer.splice(0),grid:GRID,scalePx:CH,wave:session.recentWaveform(1).at(-1)??null,rate:session.currentRate(),phase:session.phase(),validChannels:flows.filter(Number.isFinite).length,frameMs,processingMs:performance.now()-processingStart});
+      }
       // Hand the coach each newly judged turn, moved onto the wall clock.
-      if (coach && tracking) for (const u of session.turns) {
-        if (u.t <= coachLastTurn) continue;
-        coachLastTurn = u.t;
-        coach.userTurn(t / 1000 - (session.displayT - u.t), u.exhale);
+      for (const u of breathFeedback.take(session.turns, t >= motionUntil)) {
+        if (coach && tracking) coach.userTurn(t / 1000 - (session.displayT - u.t), u.exhale);
+        debugEvent('breath-turn',{signalTime:u.t,detectedTime:t,exhale:u.exhale,toneRequested:$('ownSoundToggle').checked&&soundOn,toneTime:$('ownSoundToggle').checked&&soundOn&&audioCtx?.state==='running'?performance.now():null});
         if ($('ownSoundToggle').checked) tick(u.exhale);
       }
       lastTrackedT = t;
@@ -264,6 +284,7 @@ function processFrame(t, mediaTime) {
   } else {
     havePrev = false;
   }
+  updateTrackingNotice(t, faceOk);
   drawOverlay(faceOk);
   if (t - lastUiT > 400) { lastUiT = t; updateUi(t, faceOk); }
 }
@@ -626,6 +647,7 @@ new ResizeObserver(() => drawPreview()).observe($('stage'));
 // Numbers and words around the pattern view. Runs on a timer, not on camera
 // frames, so it keeps working with no camera at all.
 function updateCoachUi(t) {
+  updateTrackingNotice(t, t - faceSeenAt < FACE_LOST_MS);
   const now = t / 1000, d = coach.durations();
   const one = (x) => String(Math.round(x * 10) / 10);
   $('coachPace').textContent = [d.in, d.top, d.out, d.bottom].filter((x, i) => i % 2 === 0 || x > 0.05).map(one).join(' · ');
@@ -730,7 +752,7 @@ function guidePhase() {
 // Soft tone at the start of each guided inhale (higher) and exhale (lower), so
 // the guide can be followed without watching the screen.
 function cue(inhale) {
-  if (!soundOn) return;
+  if (!soundOn || !guideToneOn) return;
   if (audioCtx?.state !== 'running') { soundBlocked(true); return; }
   const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
@@ -797,7 +819,7 @@ function soundBlocked(blocked) {
   b.title = blocked ? 'Tap to let sound play' : soundOn ? 'Sound on · M to mute' : 'Sound off · M to turn on';
 }
 function setSound(on) {
-  soundOn = on;
+  soundOn = on; debugEvent('master-sound',{on});
   try { localStorage.setItem('breathe.sound', on ? 'on' : 'off'); } catch { /* not remembered */ }
   $('soundToggle').checked = on;
   const b = $('soundBtn');
@@ -805,11 +827,13 @@ function setSound(on) {
   b.classList.remove('blocked');
   b.title = on ? 'Sound on · M to mute' : 'Sound off · M to turn on';
   if (on && running) ensureAudio();
+  syncQuickControls();
 }
 
 // Ring follows the guide when it is on, otherwise the measured breath.
 (function ringLoop() {
   if (running && !paused) {
+    if (pendingPace && performance.now() >= pendingPace.at) { session.paceBpm = pendingPace.value; guideStart = pendingPace.at; pendingPace = null; lastGuideInhale = null; }
     coach?.update(performance.now() / 1000);
     const guide = guidePhase();
     // A tone at the start of each breath in and each breath out; holds are silent.
@@ -825,7 +849,9 @@ function setSound(on) {
 
 function setControls() {
   document.body.classList.toggle("running", running);
-  $('modeSelect').disabled = running;
+  $('modeSelect').disabled = starting;
+  document.body.classList.toggle('paused', paused);
+  syncQuickControls();
   // Front/back camera only means something in Respiration; elsewhere the button is gone, not greyed.
   $('flipBtn').hidden = mode() !== 'respiration';
   $('flipBtn').disabled = running;
@@ -846,11 +872,16 @@ function setControls() {
   $('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
 }
 
-async function start() {
+async function start(continuation = false) {
+  if (starting || running) return;
+  localStorage.setItem('breathe.debug.notice','seen'); $('debugNotice').hidden=true;
+  starting=true; syncQuickControls();
+  if (!continuation && !continuedFrom) { groupId = crypto.randomUUID(); }
+  cameraFailure = ''; trackingBadSince = trackingGoodSince = null;
   $('startBtn').disabled = true;
   hideToast();
   // Inside the tap, before any await: browsers only let audio start from a user gesture.
-  const wantsSound = guided() || (mode() !== 'guide' && Number($('paceSelect').value) > 0);
+  const wantsSound = $('ownSoundToggle').checked || guided() || (mode() !== 'guide' && Number($('paceSelect').value) > 0);
   if (soundOn && wantsSound) ensureAudio();
   $('modeSelect').disabled = true;
   tracking = false; coachNote = '';
@@ -866,11 +897,11 @@ async function start() {
       if (mode() !== 'coach') {
         $('modeSelect').disabled = false;
         $('startBtn').disabled = false;
-        setStatus(cameraErrorText(err));
+        starting=false; syncQuickControls(); cameraFailure = cameraErrorText(err); setStatus(cameraFailure); updateTrackingNotice(performance.now(),false);
         return;
       }
       // The coach does not need the camera to be useful: carry on as a guide.
-      coachNote = 'No camera: guide only.';
+      cameraFailure = cameraErrorText(err); coachNote = 'No camera: guide only.';
     }
   }
   if (guided()) video.hidden = !tracking;
@@ -879,36 +910,47 @@ async function start() {
   coach = guided() ? new Coach(performance.now() / 1000, { pattern: PATTERNS[$('patternSelect').value] ?? PATTERNS['5-1-5-1'], adaptive: mode() === 'coach' }) : null; coachLastTurn = -Infinity; coachSeenAt = -Infinity;
   if (coach?.adaptive && !tracking) coach.setTracking(false, coach.t0);
   session = new RespirationSession(GRID.x * GRID.y * 2, { grid: GRID, paceBpm: pace });
-  running = true; paused = false; waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
-  guideStart = performance.now();
+  breathFeedback = new BreathFeedback();
+  sessionMode = mode(); sessionChanges = []; pendingPace = null;
+  running = true; paused = false;
+  telemetryAt=-Infinity; telemetryFrameAt=null; motionBuffer=[];
+  window.breatheDebug?.startSignals?.({version:VERSION,mode:mode(),pattern:$('patternSelect').value,pace:$('paceSelect').value,groupId,continuedFrom,browser:navigator.userAgent,camera:cameraTelemetry(),platform:navigator.platform,masterSound:soundOn,guideTone:guideToneOn,detectionTone:$('ownSoundToggle').checked});
+  waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
+  guideStart = sessionStartT = performance.now();
   steadySince = null; lastGuideInhale = null;
   if (soundOn && (pace || coach)) ensureAudio();
   clipBlob = null;
   if ($('recordToggle').checked) startClip();
-  $('startBtn').disabled = false;
+  starting=false; $('startBtn').disabled = false;
   setControls();
   requestWakeLock();
 }
 
-function stop() {
+function stop(forceSave = false, keepCamera = false) {
   if (!running) return;
+  if(motionBuffer.length)debugEvent('motion-frames',{sourceFrames:motionBuffer.splice(0),grid:GRID});
+  debugEvent('summary',{...session?.summary(),signal:undefined,mode:sessionMode,changes:sessionChanges});
+  debugEvent('stop'); window.breatheDebug?.stop();
+  const stoppedAt = paused ? pausedAt : performance.now();
   running = false; paused = false;
   setControls();
   showPhase(null, 0);
   releaseWakeLock();
   stopClip();
-  stopCamera();
-  if(pulse){pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;setHeartbeat(null);$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(!keepCamera)stopCamera();
+  if(pulse){saveSession({startedAt: new Date(session.startedWallMs).toISOString(),durationS:(stoppedAt-sessionStartT)/1000,mode:sessionMode,groupId,continuedFrom,changes:sessionChanges,trend:[],breathTimes:[],breaths:0,avgBpm:null});pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;setHeartbeat(null);$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
+  summary.groupId = groupId; summary.continuedFrom = continuedFrom;
+  summary.mode = sessionMode; summary.changes = sessionChanges;
   if (coach) {
     // Keep what the guide did, and why, with the session so it can be reviewed later.
-    const guidedS = performance.now() / 1000 - coach.t0;
+    const guidedS = stoppedAt / 1000 - coach.t0;
     summary.coach = { mode: coach.adaptive ? 'coach' : 'guide', pattern: $('patternSelect').value, caught: coach.caught,
       firstBpm: coach.firstBpm, endCycle: coach.cycle, fullCycle: coach.full, breaths: coach.breathCount, log: coach.log };
     summary.durationS = Math.max(summary.durationS, guidedS);
     if (!coach.caught) summary.breaths = coach.breathCount;
   }
-  const saved = summary.durationS >= 10;
+  const saved = forceSave || summary.durationS >= 10;
   if (saved) saveSession(summary);
   lastLive = summary;
   lastSummary = summary;
@@ -1081,7 +1123,7 @@ function toCsv(s) {
   const rows = ['type,elapsed_s,wall_time,value'];
   if (s.paceBpm) rows.push(`guide_bpm,0,,${s.paceBpm}`);
   for (const p of s.trend) rows.push(`rate,${p.t.toFixed(1)},${new Date(p.wallMs).toISOString()},${p.bpm.toFixed(2)}`);
-  for (const b of s.breathTimes) rows.push(`breath,${b.toFixed(2)},,`);
+  for (const b of s.breathTimes ?? []) rows.push(`breath,${b.toFixed(2)},,`);
   for (const e of s.coach?.log ?? []) rows.push(`coach,${e.t},,${e.ev} guide_cycle_s=${e.cycle} your_cycle_s=${e.user ?? ''} in_step=${e.sync ?? ''}`);
   (s.signal ?? []).forEach((v, i) => rows.push(`signal,${(i / 10).toFixed(1)},,${v}`));
   return rows.join('\n') + '\n';
@@ -1115,7 +1157,7 @@ function renderHistory() {
   for (const s of all) {
     const li = document.createElement('li');
     const left = document.createElement('span');
-    left.textContent = `${new Date(s.startedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${fmtDuration(s.durationS)}`;
+    left.textContent = `${new Date(s.startedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${fmtDuration(s.durationS)}${s.continuedFrom?' · continued from '+s.continuedFrom:''}`;
     const right = document.createElement('strong');
     right.textContent = s.avgBpm ? `${s.avgBpm.toFixed(1)}/min` : s.coach ? `${s.coach.mode} ${s.coach.pattern}` : '--';
     li.append(left, right);
@@ -1128,9 +1170,15 @@ function renderHistory() {
 
 // ---------- wiring ----------
 
-$('startBtn').onclick = start;
-$('stopBtn').onclick = stop;
-$('pauseBtn').onclick = () => { paused = !paused; pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls(); };
+$('startBtn').onclick = () => start();
+$('stopBtn').onclick = () => { stop(); continuedFrom=null; };
+$('pauseBtn').onclick = () => {
+  const now = performance.now();
+  if (!paused) { paused = true; pausedAt = now; }
+  else { const gap = (now - pausedAt) / 1000; coach?.shiftTime(gap); guideStart += gap * 1000; sessionStartT += gap * 1000; paused = false; }
+  sessionChanges.push({t:(now-sessionStartT)/1000,event:paused?'pause':'resume'}); debugEvent(paused?'pause':'resume');
+  pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls();
+};
 $('exportBtn').onclick = exportCsv;
 $('historyBtn').onclick = () => { renderHistory(); openSheet('historySheet'); };
 
@@ -1196,15 +1244,15 @@ $('clearBtn').onclick = () => {
 };
 $('clipBtn').onclick = exportClip;
 $('paceSelect').value = localStorage.getItem('breathe.pace') ?? '0';
-$('paceSelect').onchange = (e) => localStorage.setItem('breathe.pace', e.target.value);
+$('paceSelect').onchange = () => changePace($('paceSelect').value);
 $('camTileToggle').checked = localStorage.getItem('breathe.camTile') !== 'off';
 $('camTileToggle').onchange = (e) => { localStorage.setItem('breathe.camTile', e.target.checked ? 'on' : 'off'); setControls(); };
 $('ownSoundToggle').checked = localStorage.getItem('breathe.ownSound') === 'on';
-$('ownSoundToggle').onchange = (e) => localStorage.setItem('breathe.ownSound', e.target.checked ? 'on' : 'off');
+$('ownSoundToggle').onchange = () => { localStorage.setItem('breathe.ownSound', $('ownSoundToggle').checked ? 'on' : 'off'); debugEvent('detection-tone',{on:$('ownSoundToggle').checked}); if ($('ownSoundToggle').checked && soundOn) ensureAudio(); syncQuickControls(); };
 $('lineSelect').value = localStorage.getItem('breathe.line') ?? 'span';
 $('lineSelect').onchange = (e) => localStorage.setItem('breathe.line', e.target.value);
 $('patternSelect').value = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
-$('patternSelect').onchange = (e) => { localStorage.setItem('breathe.pattern', e.target.value); if (!running && guided()) setStatus(idleText()); renderIntro(); };
+$('patternSelect').onchange = () => changePattern($('patternSelect').value);
 $('coachSelect').value = localStorage.getItem('breathe.coachView') ?? 'path';
 $('coachSelect').onchange = (e) => localStorage.setItem('breathe.coachView', e.target.value);
 $('recordToggle').checked = localStorage.getItem('breathe.record') === 'on';
@@ -1238,7 +1286,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // Test hook for automated end-to-end checks.
 window.__breathe = { get pulse() { return pulse; }, get coach() { return coach; }, get tracking() { return tracking; }, startDebug() { debugLog = []; }, get debug() { return debugLog; }, get dims() { return { PW, PH, vw: video.videoWidth, vh: video.videoHeight }; }, get session() { return session; }, get chest() { return chest; }, get face() { return face; } };
 
-$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').hidden=mode()!=='respiration';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
+$('modeSelect').onchange=()=>{localStorage.setItem('breathe.mode',mode());$('bpm').textContent='--';$('ringUnit').textContent=mode()==='finger'?'heart bpm':'breaths/min';if(!preserveCameraForMode)stopCamera();pulse=null;$('pulsePanel').hidden=chestOnly();document.body.classList.toggle('coach',guided());octx.clearRect(0,0,overlay.width,overlay.height);$('coachSyncK').textContent=mode()==='guide'?'Breaths':'In step';$('breathMetric').hidden=!['remote','dual'].includes(mode());nativeView.hidden=true;video.hidden=false;$('rmssdMetric').hidden=mode()==='remote';setHeartbeat(null);setTitle();$('breathRate').textContent='--';$('flipBtn').hidden=mode()!=='respiration';if(!chestOnly()){$('paceSelect').value='6';}setStatus(mode()==='finger'?'Cover the rear camera gently with a fingertip. Tap Start.':mode()==='remote'?'Prop the phone up with face and chest visible in steady light. Tap Start.':mode()==='dual'?'Hold the phone facing you, face and chest in view, with a fingertip resting on the rear lens. Tap Start.':guided()?idleText():'Keep face and upper chest in view. Tap Start.');};
 
 setInterval(()=>{if(running&&pulse&&performance.now()-pulseFrameAt>600){pulse.loseSignal((pulse.lastInput??0)+(performance.now()-pulseFrameAt)/1000);updateUi(performance.now(),false);}},500);
 
@@ -1246,7 +1294,101 @@ function drawPulseTrend(valid){drawTrend($('heartChart'),valid?(pulse.remote?pul
 new ResizeObserver(()=>{if(!$('pulsePanel').hidden)drawPulseTrend(running&&!paused&&!!pulse?.result);}).observe($('heartChart'));
 
 const modeChanged = $('modeSelect').onchange;
-$('modeSelect').onchange = () => { modeChanged(); hideToast(); renderIntro(); };
+$('modeSelect').onchange = async () => {
+  if(starting){$('modeSelect').value=sessionMode??'coach';return;}
+  const next = mode(), oldMode = sessionMode, wasRunning = running, resume = running && !paused;
+  preserveCameraForMode=wasRunning&&['respiration','coach','remote'].includes(oldMode)&&['respiration','coach','remote'].includes(next);
+  if (wasRunning) { debugEvent('mode-change',{from:oldMode,to:next,paused}); stop(true,preserveCameraForMode); announceChange('Session saved. Switching to '+$('modeSelect').selectedOptions[0].text+'.'); }
+  modeChanged(); preserveCameraForMode=false; hideToast(); renderIntro(); syncQuickControls();
+  if (wasRunning) continuedFrom = oldMode;
+  if (resume) await start(true);
+};
+
+
+function cameraTelemetry() {
+  const settings = stream?.getVideoTracks?.()[0]?.getSettings?.() ?? {};
+  return Object.fromEntries(['width','height','frameRate','facingMode','resizeMode'].filter(k=>settings[k]!==undefined).map(k=>[k,settings[k]]));
+}
+window.addEventListener('error', e => debugEvent('error',{message:e.message}));
+window.addEventListener('unhandledrejection', e => debugEvent('error',{message:String(e.reason?.message??e.reason)}));
+document.addEventListener('visibilitychange',()=>debugEvent('visibility',{state:document.visibilityState}));
+setInterval(()=>{if(running) debugEvent('guide-state',{paused,tracking,mode:mode(),pattern:$('patternSelect').value,phase:coach?.phase(performance.now()/1000)??null,cycle:coach?.cycle??null,rate:session?.currentRate(),coachLog:coach?.log.slice(-2),camera:cameraTelemetry()});},500);
+
+function updateTrackingNotice(t, faceOk) {
+  const el = $('trackingNotice');
+  const needs = !['coach', 'guide'].includes(mode());
+  let title = '', fix = '';
+  if (running && !paused && mode() !== 'guide') {
+    if (mode() === 'coach' && !tracking) { title = 'Tracking off'; fix = 'Guiding on schedule. Turn tracking on to follow your breath.'; }
+    else if (mode() === 'finger') { if (!pulse?.result) { title = 'Waiting for pulse'; fix = 'Cover the rear lens gently and use bright light.'; } }
+    else if (!faceOk) { title = 'Can’t see you'; fix = 'Keep your face and shoulders in view. Add light if the picture is dark.'; }
+    else if (!chest || chestHidden) { title = 'Chest not in view'; fix = 'Move the phone back until your upper chest is visible.'; }
+    else if (t < motionUntil) { title = 'Hold still'; fix = 'Prop the phone up and relax your shoulders.'; }
+  }
+  if (cameraFailure && mode() !== 'guide') { title = 'Camera unavailable'; fix = cameraFailure + ' Switch to Guide to continue without a camera.'; }
+  if (title) { trackingBadSince ??= t; trackingGoodSince = null; }
+  else { trackingGoodSince ??= t; if (t-trackingGoodSince < RECOVER_MS && !el.hidden && running && !paused) return; trackingBadSince = null; }
+  const visible = !!title && (cameraFailure || t-trackingBadSince >= 1000);
+  if (el.dataset.state !== title) { debugEvent('tracking',{state:title||'tracking',mode:mode()}); el.dataset.state=title; }
+  el.hidden = !visible; el.classList.toggle('blocking', needs || !!cameraFailure); el.setAttribute('role',needs || cameraFailure?'alert':'status');
+  document.body.classList.toggle('tracking-blocked', visible && (needs || !!cameraFailure));
+  $('trackingTitle').textContent = title;
+  $('useGuideBtn').hidden = !cameraFailure;
+  $('trackingFix').textContent = fix + (title && needs && !cameraFailure ? ' Waiting for tracking; it resumes automatically.' : '') + (title && !needs && tracking ? ' Guiding on schedule.' : '');
+}
+let undoAction = null, undoTimer = null;
+function announceChange(text, undo = null) {
+  $('switchNotice').hidden = false; $('switchNotice').querySelector('span').textContent = text;
+  undoAction = undo; $('undoChange').hidden = !undo; clearTimeout(undoTimer);
+  undoTimer = setTimeout(()=>{ $('switchNotice').hidden = true; undoAction = null; },5000);
+}
+$('useGuideBtn').onclick=()=>{if(starting)return;$('modeSelect').value='guide';$('modeSelect').onchange();};
+$('undoChange').onclick = () => { const f = undoAction; undoAction = null; f?.(); $('switchNotice').hidden = true; };
+function changePace(value, undo = true) {
+  const prev = localStorage.getItem('breathe.pace') ?? '0';
+  $('paceSelect').value = value; localStorage.setItem('breathe.pace', value);
+  if (running && !coach) {
+    const now = performance.now(), cycle = session.paceBpm ? 60000/session.paceBpm : 0;
+    const at = cycle && !paused ? guideStart + (Math.floor((now-guideStart)/cycle)+1)*cycle : now;
+    pendingPace = {value:Number(value)||null, at};
+    if (paused) { session.paceBpm = pendingPace.value; pendingPace = null; guideStart = pausedAt; }
+    sessionChanges.push({event:'pace-change',value,t:(now-sessionStartT)/1000}); debugEvent('pace-change',{value});
+    announceChange('Guide pace '+(Number(value)?value+'/min':'off')+' from the next breath.', undo?()=>changePace(prev,false):null);
+  }
+  syncQuickControls();
+}
+function changePattern(value, undo = true) {
+  const prev = localStorage.getItem('breathe.pattern') ?? '5-1-5-1';
+  $('patternSelect').value = value; localStorage.setItem('breathe.pattern',value);
+  if (coach && running) {
+    coach.setPattern(PATTERNS[value], (paused?pausedAt:performance.now())/1000);
+    sessionChanges.push({event:'pattern-change',value,t:(performance.now()-sessionStartT)/1000}); debugEvent('pattern-change',{value});
+    announceChange('Pattern changes after this breath out.', undo?()=>changePattern(prev,false):null);
+  }
+  if (!running && guided()) setStatus(idleText());
+  renderIntro(); syncQuickControls();
+}
+function syncQuickControls() {
+  $('quickPaceLabel').hidden = guided(); $('quickPatternLabel').hidden = !guided();
+  $('quickPace').value = $('paceSelect').value; $('quickPattern').value = $('patternSelect').value;
+  $('guideToneBtn').setAttribute('aria-pressed',String(guideToneOn)); $('guideToneToggle').checked=guideToneOn;
+  $('guideToneBtn').textContent='Guide tone'+(!soundOn?' · muted':''); $('detectionToneBtn').textContent='Detection tone'+(!soundOn?' · muted':'');
+  $('guideToneBtn').disabled = !guided() && Number($('paceSelect').value) === 0;
+  $('detectionToneBtn').hidden = mode()==='guide';
+  $('detectionToneBtn').setAttribute('aria-pressed',String($('ownSoundToggle').checked));
+  $('modeSelect').disabled=starting;
+  for (const b of $('modeTabs').children) { b.disabled=starting; b.setAttribute('aria-pressed', String(b.dataset.mode === mode())); }
+  if (!running && !cameraFailure) { $('trackingNotice').hidden = true; document.body.classList.remove('tracking-blocked'); }
+}
+for (const [quick,original] of [['quickPace','paceSelect'],['quickPattern','patternSelect']]) $(''+quick).innerHTML = $(original).innerHTML;
+$('quickPace').onchange = e => changePace(e.target.value);
+$('quickPattern').onchange = e => changePattern(e.target.value);
+$('guideToneBtn').onclick = () => { guideToneOn = !guideToneOn; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); if (guideToneOn && soundOn) ensureAudio(); syncQuickControls(); };
+$('detectionToneBtn').onclick = () => { $('ownSoundToggle').checked = !$('ownSoundToggle').checked; $('ownSoundToggle').onchange(); };
+for (const o of $('modeSelect').options) {
+  const b = document.createElement('button'); b.type='button'; b.textContent=o.text; b.dataset.mode=o.value;
+  b.onclick=()=>{ if (mode() === o.value) return; $('modeSelect').value=o.value; $('modeSelect').onchange(); }; $('modeTabs').append(b);
+}
 
 // Open in the mode used last time; the coach by default.
 {
@@ -1279,5 +1421,6 @@ const autoMode = ['coach', 'guide'].find((m) => new URLSearchParams(location.sea
 if (autoMode) {
   $('modeSelect').value = autoMode;
   $('modeSelect').onchange();
-  start();
+  // New visitors see the recording notice before a shortcut can record.
+  if(localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled)start();
 }

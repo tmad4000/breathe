@@ -155,3 +155,25 @@ test('the log records what happened and why', () => {
   const c = coach.log.find((e) => e.ev === 'catch');
   assert.ok(c.t > 4 && c.cycle === 6 && Math.abs(c.user - 60 / 14) < 0.4, JSON.stringify(c));
 });
+
+test('pattern switching preserves the current breath and replans future breaths', () => {
+  const c = new Coach(0, {adaptive:false});
+  c.update(4);
+  const level = c.level(4), phase = c.phase(4), t0=c.t0;
+  c.setPattern(PATTERNS['4-7-8'],4);
+  assert.equal(c.level(4),level);
+  assert.equal(c.phase(4),phase);
+  assert.equal(c.t0,t0,'same session');
+  assert.equal(c.full,19);
+  assert.ok(c.log.some(x=>x.ev==='pattern-change'));
+  c.update(100);
+  assert.deepEqual(c.durations(),{in:4,top:7,out:8,bottom:0});
+});
+
+test('pause shifts the guide clock without jumping phase', () => {
+  const c = new Coach(0,{adaptive:false}); c.update(5);
+  const level=c.level(5),phase=c.phase(5);
+  c.shiftTime(120); c.update(125);
+  assert.equal(c.level(125),level);
+  assert.equal(c.phase(125),phase);
+});
