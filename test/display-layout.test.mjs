@@ -34,3 +34,7 @@ test('low-passed pan forces return to exact centre after loss even inside hyster
  assert.deepEqual(value,{x:.5,y:.5});
  assert.deepEqual(pan.update({x:.503,y:.5},now+=16,true),value,'small noise does not write a new position');
 });
+
+test('reaching a crop boundary bypasses deadband and ends exactly at the edge',()=>{
+ for(const [near,edge] of [[.97,1],[.03,0]]){const pan=new CoverPan(0);let now=0,value;for(let i=0;i<60;i++)value=pan.update({x:near,y:near},now+=16,true);assert.equal(value.x,near);for(let i=0;i<60;i++)value=pan.update({x:edge,y:edge},now+=16,true);assert.deepEqual(value,{x:edge,y:edge});}
+});

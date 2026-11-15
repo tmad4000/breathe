@@ -15,7 +15,7 @@ export class CoverPan {
   constructor(now=0){this.x=this.y=this.targetX=this.targetY=this.appliedX=this.appliedY=.5;this.t=now;}
   update(target,now,hasBox){
     if(!hasBox){this.targetX=this.targetY=.5;}
-    else {if(Math.abs(target.x-this.targetX)>.04)this.targetX=target.x;if(Math.abs(target.y-this.targetY)>.04)this.targetY=target.y;}
+    else {if(target.x===0||target.x===1||Math.abs(target.x-this.targetX)>.04)this.targetX=target.x;if(target.y===0||target.y===1||Math.abs(target.y-this.targetY)>.04)this.targetY=target.y;}
     const blend=1-Math.exp(-Math.max(0,Math.min(100,now-this.t))/100);this.t=now;
     this.x+=(this.targetX-this.x)*blend;this.y+=(this.targetY-this.y)*blend;
     for(const [value,target,applied] of [['x','targetX','appliedX'],['y','targetY','appliedY']]){
