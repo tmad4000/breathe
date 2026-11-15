@@ -1,0 +1,40 @@
+name: Publish stamped Breathe Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: npm test
+      - name: Build static artifact with exact source commit metadata
+        run: sh scripts/build-pages.sh _site
+      - name: Verify deployed metadata describes this exact checkout
+        run: |
+          node --input-type=module -e "import fs from 'node:fs';import assert from 'node:assert/strict';const v=JSON.parse(fs.readFileSync('_site/version.json'));const pkg=JSON.parse(fs.readFileSync('package.json'));assert.equal(v.version,pkg.version);assert.equal(v.commit,process.env.GITHUB_SHA);assert.equal(v.event,'commit');assert.equal(v.committerTime,v.commitTime);assert.ok(Number.isFinite(Date.parse(v.commitTime)));assert.ok(Number.isFinite(Date.parse(v.buildTime)));"
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: _site
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
