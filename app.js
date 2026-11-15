@@ -1346,12 +1346,12 @@ function drawRespirationOverlay(faceOk) {
   const box=video.getBoundingClientRect(),stageBox=$('stage').getBoundingClientRect();
   const w=box.width,h=box.height,x=box.left-stageBox.left,y=box.top-stageBox.top;
   const mapping=displayMapping({sourceWidth:PW,sourceHeight:PH,width:w,height:h,x,y,rects:[face,chest],mirrored});
-  video.style.objectFit=mapping.fit;
+  if(video.style.objectFit!==mapping.fit)video.style.objectFit=mapping.fit;
   const clipBottom=Math.min(sh,$('controls').getBoundingClientRect().top-stageBox.top);
   octx.save();octx.beginPath();octx.rect(x,y,w,Math.max(0,Math.min(y+h,clipBottom)-y));octx.clip();octx.lineWidth=1.5;octx.strokeStyle='rgba(255,255,255,.75)';octx.setLineDash([3,4]);
   for(const r of [face,chest]){if(!r)continue;const q=mapping.map(r);octx.strokeRect(q.x,q.y,q.w,q.h);}
   octx.restore();
-  if(!chartFocus&&chest){const q=mapping.map(chest),trace=$('respTrace'),traceBox=trace.getBoundingClientRect(),space=traceBox.bottom-stageBox.top-(q.y+q.h)-6;trace.style.height=Math.max(12,Math.min(innerHeight<=700?32:50,space))+'px';}
+  if(!chartFocus&&chest){const q=mapping.map(chest),trace=$('respTrace'),traceBox=trace.getBoundingClientRect(),space=traceBox.bottom-stageBox.top-(q.y+q.h)-6;const height=Math.max(12,Math.min(innerHeight<=700?32:50,space))+'px';if(trace.style.height!==height)trace.style.height=height;}
 }
 function drawRespirationTrace() {
   const canvas=$('respTrace'),ctx=canvas.getContext('2d'),dpr=devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
