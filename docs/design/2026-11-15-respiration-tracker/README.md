@@ -1,23 +1,15 @@
-# Saved breathing UI design — 2026-11-15
+# Respiration Tracker design, saved 2026-11-15
 
-Jacob asked to preserve the current design before a camera-first Respiration
-Tracker follow-up. This folder archives Fable's interactive mockup and actual
-390px browser screenshots from the implementation. The screenshots show Coach,
-not a real respiration camera session; they contain no person or camera data.
+Jacob on this design: "it's really pretty and we should probably save it."
 
-The mockup supports multiple mode and tracking-state simulations. It is design
-reference, not an accuracy test or the final camera-first layout.
+This folder keeps the first layout mockup for breathe's Respiration Tracker as it stood on 2026-11-15, before the camera-first revision.
 
-Provenance: Fable 2e8b269a, mockup-breathe.html; implementation cfd4bfbf;
-root d3caa262 relayed Jacob's save request on 2026-11-15. Source screenshot
-versions: initial/refined working-tree Coach, and live Breathe 0.12.1 (PR21,
-ebca55cf328eb8d4d99d101b0597614a18cc0a55).
+- `mockup-breathe-v1.html`: the interactive mockup (open in a browser; use the state buttons beside the phone).
+- `v1-respiration-tracker-idle.png`, `-running.png`, `-blocked.png`: the mockup at 390 px wide.
+- `build-0.12.1-respiration-tracker-idle.png`: the shipped 0.12.1 build in the same mode, for comparison.
 
-Follow-up direction: Respiration Tracker defaults to large camera coverage,
-translucent rate/phase overlays and a slim trace at the bottom. A remembered
-Chart focus option swaps to a large chart with a camera inset. Implemented from Fable's updated v2 camera-first mockup in Breathe0.13.0. Other modes retain their own layout.
+What it shows: mode tabs with "Respiration Tracker", a large ring with the rate, a small camera tile top right, a large amber block when tracking cannot work, and on-screen chips for pace, Guide tone and Detection tone.
 
-`mockup-breathe-v2-camera-first.html` archives the updated design.
-`camera-first-synthetic.png` and `chart-focus-synthetic.png` show the running
-implementation with Chromium's synthetic green test camera. They contain no
-real-person video and do not establish camera accuracy.
+What changed afterwards: Jacob asked that the camera fill most of the screen by default. This look survives as the "Chart focus" option (big number and chart, small camera inset). The camera-first mockup is `mockup-breathe.html` in the design folder of the 2026-11-15 request.
+
+Design: Fable (Paseo 2e8b269). The person and the breathing signal in the mockup are simulated.
