@@ -251,3 +251,18 @@ Rendering telemetry records 10-second fps/processing-time windows. Glass blur
 starts off, is enabled only after a healthy baseline, and is dropped if frame
 rate or processing time deteriorates. The dark translucent fill remains without
 blur or browser support.
+
+## Version and update time
+
+Settings shows the deployed version and a relative update time. Tap or press
+Enter for the exact local time, zone and commit. The date is the deployed
+commit's committer date, with build time used only when Git is unavailable or
+the source is dirty; missing/invalid metadata shows version alone.
+
+GitHub Pages now publishes an Actions artifact from `main` at the same URL.
+`scripts/build-pages.sh` copies only public runtime assets and runs
+`scripts/stamp-version.sh`; generated `version.json` records the exact source
+commit, `commitTime` (also `committerTime`), `buildTime` and `event`.
+The source-controlled `version.json` is an unstamped local-development template;
+its null timestamps are never replaced with a guessed visit time. The shared
+stamp renderer comes from the app-principles kit, without a new dependency.

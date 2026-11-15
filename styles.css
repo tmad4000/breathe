@@ -402,3 +402,7 @@ body.respiration .stage .card { backdrop-filter:none; -webkit-backdrop-filter:no
 @supports ((backdrop-filter:blur(6px)) or (-webkit-backdrop-filter:blur(6px))) {
   body.respiration.resp-blur .stage .card { backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
 }
+/* Version/update details stay in Settings, small and relative first. */
+.app-stamp { font-size:12px; font-family:inherit; font-variant-numeric:tabular-nums; color:var(--muted); white-space:nowrap; cursor:pointer; }
+.app-stamp[data-exact="1"] { white-space:normal; }
+.app-stamp:focus-visible { outline:2px solid var(--blue); outline-offset:3px; border-radius:2px; }

@@ -1,12 +1,13 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.13.1';
+const VERSION = '0.13.2';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
 import { isNewerVersion } from './update.js';
 import { displayMapping, BlurBudget } from './display-layout.js';
+import './app-stamp.js';
 import { DebugRecorder } from './debug-recorder.js';
 import { BreathFeedback } from './breath-feedback.js';
 let breathFeedback = new BreathFeedback();
@@ -94,7 +95,8 @@ setTimeout(()=>{$('debugNotice').hidden=true;},6000);
 $('debugNotice').hidden = localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled;
 $('guideToneToggle').onchange = () => { guideToneOn=$('guideToneToggle').checked; localStorage.setItem('breathe.guideTone',guideToneOn?'on':'off'); debugEvent('guide-tone',{on:guideToneOn}); syncQuickControls(); };
 
-$('version').textContent = VERSION + (window.__breatheNativeInfo?.shell ? ` · app ${window.__breatheNativeInfo.shell}` : '');
+if(!$('version').textContent)$('version').textContent='v'+VERSION;
+$('nativeVersion').textContent=window.__breatheNativeInfo?.shell?` · app ${window.__breatheNativeInfo.shell}`:'';
 $('topVersion').textContent = `v${VERSION}`;
 // The tab title names the open mode, not just the app.
 // While a sheet is open, its name comes first: "Settings & history · Coach — Breathe".

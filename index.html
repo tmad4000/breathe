@@ -210,11 +210,12 @@
         <button class="btn secondary" id="clearBtn">Clear history</button>
         <button class="btn primary" id="closeHistoryBtn" data-close>Close</button>
       </div>
-      <p class="muted version">Breathe <span id="version"></span> · camera processing stays on this device. Send feedback loads World Issue Tracker only when tapped; submitting feedback sends what you choose to share.</p>
+      <p class="muted version">Breathe <span id="version" data-app-stamp data-src="version.json"></span><span id="nativeVersion"></span></p>
+      <p class="muted hint">Camera processing stays on this device. Send feedback loads World Issue Tracker only when tapped; submitting feedback sends what you choose to share.</p>
     </div>
   </div>
 
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.13.1"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.13.2"></script>
 </body>
 </html>

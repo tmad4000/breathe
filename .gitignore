@@ -2,3 +2,5 @@ node_modules/
 test/fixtures/
 .DS_Store
 .port
+
+_site/
