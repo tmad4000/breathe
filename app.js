@@ -1,11 +1,12 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.13.0';
+const VERSION = '0.13.1';
 import { renderLiveRates } from './live-rates.js';
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
 import { isNewerVersion } from './update.js';
+import { displayMapping, BlurBudget } from './display-layout.js';
 import { DebugRecorder } from './debug-recorder.js';
 import { BreathFeedback } from './breath-feedback.js';
 let breathFeedback = new BreathFeedback();
@@ -36,6 +37,8 @@ const STORE_KEY = 'breathe.sessions.v1';
 const RING_LEN = 276.46;
 
 const $ = (id) => document.getElementById(id);
+let respPan={x:.5,y:.5,targetX:.5,targetY:.5,t:performance.now()};
+let frameWindow={n:0,processing:0,interval:0,start:performance.now()},blurBudget=new BlurBudget(false);
 let chartFocus = localStorage.getItem('breathe.layout.respiration.v1') === 'chart', respTrayOpen = false;
 const respAnchors = [...document.querySelectorAll('.card,section.stats:not(#coachStats),#trackingNotice,#switchNotice')].map(el=>{
   const anchor=document.createComment('mode layout anchor');el.before(anchor);return {el,anchor};
@@ -292,6 +295,10 @@ function processFrame(t, mediaTime) {
   updateTrackingNotice(t, faceOk);
   drawOverlay(faceOk);
   if (t - lastUiT > 400) { lastUiT = t; updateUi(t, faceOk); }
+  if(running&&!paused&&mode()==='respiration'){
+    frameWindow.n++;frameWindow.processing+=performance.now()-processingStart;frameWindow.interval+=Math.max(0,frameMs??0);
+    if(t-frameWindow.start>=10000){const metrics={fps:frameWindow.n*1000/(t-frameWindow.start),processingMs:frameWindow.processing/frameWindow.n,frameMs:frameWindow.interval/frameWindow.n,blurBefore:blurBudget.enabled};metrics.blurAfter=blurBudget.observe(metrics);document.body.classList.toggle('resp-blur',metrics.blurAfter);debugEvent('render-performance',metrics);frameWindow={n:0,processing:0,interval:0,start:t};}
+  }
 }
 
 function detectFace(t) {
@@ -921,6 +928,7 @@ async function start(continuation = false) {
   sessionMode = mode(); sessionChanges = []; pendingPace = null;
   running = true; paused = false;
   telemetryAt=-Infinity; telemetryFrameAt=null; motionBuffer=[];
+  frameWindow={n:0,processing:0,interval:0,start:performance.now()};blurBudget=new BlurBudget(CSS.supports('backdrop-filter','blur(6px)')||CSS.supports('-webkit-backdrop-filter','blur(6px)'));document.body.classList.remove('resp-blur');
   window.breatheDebug?.startSignals?.({version:VERSION,mode:mode(),pattern:$('patternSelect').value,pace:$('paceSelect').value,groupId,continuedFrom,browser:navigator.userAgent,camera:cameraTelemetry(),platform:navigator.platform,masterSound:soundOn,guideTone:guideToneOn,detectionTone:$('ownSoundToggle').checked});
   waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = sessionStartT = performance.now();
@@ -1183,6 +1191,7 @@ $('pauseBtn').onclick = () => {
   const now = performance.now();
   if (!paused) { paused = true; pausedAt = now; }
   else { const gap = (now - pausedAt) / 1000; coach?.shiftTime(gap); guideStart += gap * 1000; sessionStartT += gap * 1000; paused = false; }
+  frameWindow={n:0,processing:0,interval:0,start:now};
   sessionChanges.push({t:(now-sessionStartT)/1000,event:paused?'pause':'resume'}); debugEvent(paused?'pause':'resume');
   pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls();
 };
@@ -1236,6 +1245,7 @@ setSound(soundOn);
 // Any tap during a session can unlock sound that was blocked (iOS also suspends it in the background).
 document.addEventListener('pointerdown', () => { if (running && soundOn && audioCtx?.state !== 'running') ensureAudio(); }, true);
 document.addEventListener('keydown', (e) => {
+  if(e.key==='Escape'&&mode()==='respiration'&&respTrayOpen){respTrayOpen=false;renderRespirationLayout();$('respTuneBtn').focus();e.preventDefault();return;}
   if (e.key === 'Escape') {
     const open = [...document.querySelectorAll('.sheet')].filter((x) => !x.hidden).at(-1);
     if (open) { e.preventDefault(); closeSheet(open); } else if (!$('sumToast').hidden) hideToast();
@@ -1317,25 +1327,40 @@ function renderRespirationLayout() {
   const resp=mode()==='respiration';
   document.body.classList.toggle('respiration',resp);document.body.classList.toggle('chart-focus',resp&&chartFocus);
   document.body.classList.toggle('resp-tray-open',resp&&respTrayOpen);
-  for(const {el,anchor} of respAnchors){if(resp){if(el.parentElement!==$('stage'))$('stage').append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
+  for(const {el,anchor} of respAnchors){if(resp){const target=el.matches('section.stats')?document.querySelector('.card'):$('stage');if(el.parentElement!==target)target.append(el);}else if(el.previousSibling!==anchor)anchor.after(el);}
+  if(chartFocus||!resp)$('respTrace').style.height='';
+  if(!resp){video.style.objectFit='';video.style.objectPosition='';}
   $('chartFocusBtn').hidden=!resp;$('respTrace').hidden=!resp;$('respTuneBtn').hidden=!resp||!running;
   $('chartFocusBtn').setAttribute('aria-pressed',String(chartFocus));$('chartFocusBtn').textContent=chartFocus?'Camera':'Chart focus';
   $('respTuneBtn').setAttribute('aria-expanded',String(respTrayOpen));
-  $('quickControls').inert=resp&&running&&!paused&&!respTrayOpen;
+  $('quickControls').inert=resp&&running&&!respTrayOpen;
   $('respTuneBtn').classList.toggle('has-tone',guideToneOn||$('ownSoundToggle').checked);
 }
 $('chartFocusBtn').onclick=()=>{chartFocus=!chartFocus;localStorage.setItem('breathe.layout.respiration.v1',chartFocus?'chart':'camera');debugEvent('layout',{mode:'respiration',layout:chartFocus?'chart':'camera'});renderRespirationLayout();drawRespirationOverlay(performance.now()-faceSeenAt<FACE_LOST_MS);};
 $('respTuneBtn').onclick=()=>{respTrayOpen=!respTrayOpen;renderRespirationLayout();};
+document.addEventListener('pointerdown',e=>{if(mode()==='respiration'&&respTrayOpen&&!e.target.closest('#respTuneBtn,#quickControls')){respTrayOpen=false;renderRespirationLayout();}});
 function drawRespirationOverlay(faceOk) {
   const dpr=window.devicePixelRatio||1,sw=overlay.clientWidth,sh=overlay.clientHeight;
   if(overlay.width!==Math.round(sw*dpr)||overlay.height!==Math.round(sh*dpr)){overlay.width=Math.round(sw*dpr);overlay.height=Math.round(sh*dpr);}
   octx.setTransform(dpr,0,0,dpr,0,0);octx.clearRect(0,0,sw,sh);
-  if(!faceOk||!PW||!PH)return;
-  const w=chartFocus?92:sw,h=chartFocus?124:sh,x=chartFocus?sw-w-12:0,y=chartFocus?58:0;
-  const k=Math.max(w/PW,h/PH),ox=x+(w-PW*k)/2,oy=y+(h-PH*k)/2;
-  octx.save();octx.beginPath();octx.rect(x,y,w,h);octx.clip();octx.lineWidth=1.5;octx.strokeStyle='rgba(255,255,255,.75)';octx.setLineDash([3,4]);
-  for(const r of [face,chest]){if(!r)continue;const left=ox+r.x*k,rw=r.w*k;octx.strokeRect(mirrored?x+w-(left-x)-rw:left,oy+r.y*k,rw,r.h*k);}
+  if(!PW||!PH)return;
+  const box=video.getBoundingClientRect(),stageBox=$('stage').getBoundingClientRect();
+  const w=box.width,h=box.height,x=box.left-stageBox.left,y=box.top-stageBox.top;
+  const validFocus=!chartFocus&&faceOk&&!chestHidden&&performance.now()>=motionUntil?chest:null;
+  const opts={sourceWidth:PW,sourceHeight:PH,width:w,height:h,x,y,focus:validFocus,mirrored};
+  const desired=displayMapping(opts),now=performance.now();
+  if(Math.abs(desired.target.x-respPan.targetX)>.04)respPan.targetX=desired.target.x;
+  if(Math.abs(desired.target.y-respPan.targetY)>.04)respPan.targetY=desired.target.y;
+  const blend=1-Math.exp(-Math.min(100,now-respPan.t)/100);respPan.t=now;
+  respPan.x+=(respPan.targetX-respPan.x)*blend;respPan.y+=(respPan.targetY-respPan.y)*blend;
+  const mapping=displayMapping({...opts,position:chartFocus?{x:.5,y:.5}:respPan});
+  if(video.style.objectFit!=='cover')video.style.objectFit='cover';
+  const objectPosition=`${mapping.position.x*100}% ${mapping.position.y*100}%`;if(video.style.objectPosition!==objectPosition)video.style.objectPosition=objectPosition;
+  const clipBottom=Math.min(sh,$('controls').getBoundingClientRect().top-stageBox.top);
+  octx.save();octx.beginPath();octx.rect(x,y,w,Math.max(0,Math.min(y+h,clipBottom)-y));octx.clip();octx.lineWidth=1.5;octx.strokeStyle='rgba(255,255,255,.75)';octx.setLineDash([3,4]);
+  for(const r of (faceOk?[face,chest]:[])){if(!r)continue;const q=mapping.map(r);octx.strokeRect(q.x,q.y,q.w,q.h);}
   octx.restore();
+  if(!chartFocus&&chest){const q=mapping.map(chest),trace=$('respTrace'),traceBox=trace.getBoundingClientRect(),space=traceBox.bottom-stageBox.top-(q.y+q.h)-6;const height=Math.max(12,Math.min(innerHeight<=700?32:50,space))+'px';if(trace.style.height!==height)trace.style.height=height;}
 }
 function drawRespirationTrace() {
   const canvas=$('respTrace'),ctx=canvas.getContext('2d'),dpr=devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
