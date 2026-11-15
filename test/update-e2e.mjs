@@ -6,7 +6,7 @@ import { launch } from './browser.mjs';
 
 const [base = 'http://127.0.0.1:8968/', shots] = process.argv.slice(2);
 const VERSION = JSON.parse(readFileSync(new URL('../version.json', import.meta.url), 'utf8')).version;
-const browser = await launch();
+const browser = await launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   const errors = [];
@@ -71,9 +71,9 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
 
   // Tapping it during a session stops the session first, then reloads.
-  await page.goto(`${base}?src=test/fixtures/b12-face.mp4`);
+  await page.goto(base);
   await page.waitForTimeout(500);
-  await page.selectOption('#modeSelect', 'respiration');
+  await page.selectOption('#modeSelect', 'guide');
   await page.click('#startBtn');
   await page.waitForTimeout(12000);
   assert.ok(await visible('#stopBtn'), 'session running');

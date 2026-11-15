@@ -1507,7 +1507,7 @@ $('sessionMenu').onkeydown=e=>{
   if(e.key.length===1&&!e.ctrlKey&&!e.metaKey&&!e.altKey){const ordered=[...items.slice(i+1),...items.slice(0,i+1)],match=ordered.find(b=>b.textContent.toLowerCase().startsWith(e.key.toLowerCase()));if(match){e.preventDefault();match.focus();}}
 };
 document.addEventListener('pointerdown',e=>{if(!$('sessionMenu').hidden&&!e.target.closest('#sessionMenu,#quickPattern,#quickPace'))closeSessionMenu();});
-window.addEventListener('resize',()=>closeSessionMenu(false));
+window.addEventListener('resize',()=>closeSessionMenu());
 
 // Open in the mode used last time; the coach by default.
 {

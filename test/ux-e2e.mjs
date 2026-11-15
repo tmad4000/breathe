@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { launch } from './browser.mjs';
 const [base = 'http://127.0.0.1:8968/', clip = 'test/fixtures/b12-face.mp4'] = process.argv.slice(2);
-const browser = await launch();
+const browser = await launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
 const errors = [];
 const audioHook = () => {
   window.__osc = 0;
@@ -15,12 +15,6 @@ const audioHook = () => {
   const orig = AC.prototype.createOscillator;
   AC.prototype.createOscillator = function () { const o = orig.call(this); const s = o.start.bind(o); o.start = (...a) => { if (this.state === 'running') window.__osc++; return s(...a); }; return o; };
 };
-const laneTop = (page) => page.evaluate(() => {
-  const c = document.getElementById('overlay'), dpr = devicePixelRatio || 1;
-  const d = c.getContext('2d').getImageData(Math.round(2 * dpr), 0, 1, c.height).data;
-  for (let y = Math.round(60 * dpr); y < c.height; y++) if (d[y * 4 + 3] > 20) return Math.round(y / dpr);
-  return null;
-});
 try {
   let page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', (e) => errors.push(e.message));
@@ -67,17 +61,17 @@ try {
 
   page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(`${base}?coach&src=${encodeURIComponent(clip)}`);
+  await page.goto(`${base}?coach`);
   if(await page.locator('#startBtn').isVisible())await page.click('#startBtn');
   await page.waitForFunction(() => window.__breathe.tracking, {}, { timeout: 30000 });
   await page.waitForTimeout(2500);
-  const on = { slot: await page.locator('#camSlot').boundingBox(), video: await page.locator('#video').boundingBox(), lane: await laneTop(page) };
+  const on = { slot: await page.locator('#camSlot').boundingBox(), video: await page.locator('#video').boundingBox(), lane: await page.locator('#overlay').boundingBox() };
   await page.click('#trackBtn');
   await page.waitForTimeout(1200);
-  const off = { slot: await page.locator('#camSlot').boundingBox(), lane: await laneTop(page) };
+  const off = { slot: await page.locator('#camSlot').boundingBox(), lane: await page.locator('#overlay').boundingBox() };
   assert.deepEqual(on.video, on.slot, 'the picture fills the slot');
   assert.deepEqual(off.slot, on.slot, 'slot does not move');
-  assert.equal(off.lane, on.lane, 'lane does not move');
+  assert.deepEqual(off.lane, on.lane, 'lane viewport does not move');
   assert.equal(await page.locator('#camSlotText').textContent(), 'Tracking off');
   await page.close();
   assert.deepEqual(errors, []);

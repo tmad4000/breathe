@@ -33,8 +33,8 @@ for(const width of [390,1280])for(const m of Object.keys(names)){
  if(m==='guide'||m==='finger')assert.equal(await p.locator('#detectedSoundControl').isDisabled(),true);
  await p.keyboard.press('Escape');assert.equal(await p.evaluate(()=>document.activeElement.id),'soundBtn');
  await p.click('#pauseBtn');await assertControls('paused');assert.equal(await p.locator('#pauseBtn').textContent(),'Resume');
- const before=await p.evaluate(()=>({pattern:__breathe.coach?.pattern,pace:__breathe.session.paceBpm}));await chooseSession(p,['coach','guide'].includes(m)?'pattern':'pace',['coach','guide'].includes(m)?'4-7-8':'12');
- assert.deepEqual(await p.evaluate(()=>({pattern:__breathe.coach?.pattern,pace:__breathe.session.paceBpm})),before,'paused target not applied early');assert.equal(await p.locator('#pendingControl').isVisible(),true);await p.click('#undoChange');assert.equal(await p.locator('#pendingControl').isVisible(),false);
+ if(m==='finger'||m==='remote')await p.waitForFunction(()=>document.querySelector('#pulseQuality').textContent==='Paused');const viewBefore=await p.locator('#stage').boundingBox();const before=await p.evaluate(()=>({pattern:__breathe.coach?.pattern,pace:__breathe.session.paceBpm}));await chooseSession(p,['coach','guide'].includes(m)?'pattern':'pace',['coach','guide'].includes(m)?'4-7-8':'12');
+ assert.deepEqual(await p.evaluate(()=>({pattern:__breathe.coach?.pattern,pace:__breathe.session.paceBpm})),before,'paused target not applied early');assert.equal(await p.locator('#pendingControl').isVisible(),true);assert.deepEqual(await p.locator('#stage').boundingBox(),viewBefore,'pending announcement does not move the view');await p.click('#undoChange');assert.equal(await p.locator('#pendingControl').isVisible(),false);
  await p.click('#pauseBtn');await assertControls('resumed');
  if(out)await p.screenshot({path:out+'/'+width+'-'+m+'-running.png'});
  // A running switch saves and continues; the paused switch then saves to ready.

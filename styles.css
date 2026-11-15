@@ -458,3 +458,6 @@ body.respiration #respTraceLabel { bottom:calc(182px + env(safe-area-inset-botto
 .debug-chip { width:48px; flex:none; white-space:nowrap; overflow:hidden; }
 
 .sheet [hidden] { display:none; }
+/* A saved-session card and pending announcements stay clear of the stable control. */
+.sum-toast { bottom:calc(132px + env(safe-area-inset-bottom)); }
+.switch-notice { position:fixed; top:58px; left:12px; right:12px; z-index:6; margin:0 auto; width:calc(100% - 24px); max-width:560px; padding:6px 10px; border-radius:9px; color:#eeeef5; background:rgba(15,18,22,.92); }
