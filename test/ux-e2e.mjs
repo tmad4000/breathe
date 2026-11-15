@@ -58,7 +58,7 @@ try {
   await page.click('#historyBtn');
   await page.mouse.click(195, 20);   // the dimmed area above the sheet
   assert.ok(await page.locator('#historySheet').isHidden(), 'a tap outside closes settings');
-  assert.match(await page.title(), /^Guide \(no camera\) — Breathe$/);
+  assert.match(await page.title(), /^Guide — Breathe$/);
   await page.selectOption('#modeSelect', 'respiration', {force:true});
   assert.ok(await page.locator('#flipBtn').isVisible(), 'camera switch in Respiration');
   await page.close();

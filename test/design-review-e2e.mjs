@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {launch} from './browser.mjs';
+const browser=await launch();
+try{
+ const page=await browser.newPage({viewport:{width:390,height:780}}),requests=[],errors=[];
+ page.on('request',r=>requests.push(r.url()));page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(process.argv[2]??'http://127.0.0.1:8793/');
+ const rects=await page.evaluate(()=>['debugNotice','startBtn'].map(id=>document.getElementById(id).getBoundingClientRect().toJSON()));
+ assert.ok(rects[0].bottom<=rects[1].top||rects[0].top>=rects[1].bottom,'notice never covers Start');
+ assert.equal(await page.locator('#debugChip').evaluate(e=>e.classList.contains('failed')),false);
+ await page.evaluate(()=>{breatheDebug.status();breatheDebug.status();breatheDebug.status();});
+ assert.equal(await page.locator('#debugChip').evaluate(e=>e.classList.contains('failed')),false,'repeated idle status cannot toggle amber');
+ assert.equal(requests.some(x=>x.includes('worldissuetracker.com')),false,'no remote feedback code on ordinary visit');
+ await page.click('#modeTabs [data-mode=guide]');await page.click('#startBtn');
+ assert.equal(await page.locator('#modeSelect option:checked').textContent(),'Guide');
+ await page.click('#pauseBtn');await page.selectOption('#quickPattern','4-7-8');
+ const c=await page.locator('#switchNotice').evaluate(e=>getComputedStyle(e).color);assert.equal(c,'rgb(214, 214, 220)','readable confirmation on dark Coach/Guide');
+ await page.selectOption('#quickPattern','5-1-5-1');
+ const buttons=await page.locator('#quickControls > :not([hidden])').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().top));
+ assert.ok(Math.max(...buttons)-Math.min(...buttons)<5,'three controls fit one row at390px');
+ await page.click('#modeTabs [data-mode=coach]');await page.click('#startBtn');
+ await page.waitForFunction(()=>window.__breathe.coach);
+ assert.equal(await page.locator('#trackingNotice').evaluate(e=>e.classList.contains('blocking')),false,'Coach no-camera is advisory');
+ await page.click('#stopBtn');await page.click('#historyBtn');
+ await page.locator('#breathe-feedback-mount .feedback-link').click();
+ await page.waitForFunction(()=>window.WitFeedback?.ready);
+ assert.ok(requests.some(x=>x.includes('worldissuetracker.com/widget/wit-feedback.js')));
+ assert.equal(await page.locator('#wit-feedback-widget').evaluate(e=>getComputedStyle(e.shadowRoot.querySelector('.trigger')).position),'static');
+ const retry=await browser.newPage();await retry.route('**/widget/wit-core.js*',r=>r.abort());
+ await retry.goto(process.argv[2]??'http://127.0.0.1:8793/');await retry.click('#historyBtn');await retry.locator('.feedback-link').click();
+ await retry.getByRole('button',{name:'Feedback unavailable · retry'}).waitFor({timeout:15000});
+ await retry.unroute('**/widget/wit-core.js*');await retry.locator('.feedback-link').click();await retry.waitForFunction(()=>window.WitFeedback?.ready,{}, {timeout:15000});await retry.close();
+ assert.deepEqual(errors,[]);console.log('PASS: notice clear,stable idle dot,dark confirmation,compact controls,Coach advisory,lazy inline feedback');
+}finally{await browser.close();}
