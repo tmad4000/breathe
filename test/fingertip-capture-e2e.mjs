@@ -4,7 +4,7 @@ import {launch} from './browser.mjs';
 const b=await launch({headless:true});
 try{
  const p=await b.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
- await p.addInitScript(()=>{
+ await p.addInitScript(()=>{if(localStorage.getItem('breathe.camera.v1')===null)localStorage.setItem('breathe.camera.v1','on');
   navigator.mediaDevices.getUserMedia=async constraints=>{
    window.captureConstraints=constraints;
    const c=document.createElement('canvas');c.width=160;c.height=120;const ctx=c.getContext('2d'),t0=performance.now();

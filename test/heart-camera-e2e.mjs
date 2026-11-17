@@ -5,7 +5,7 @@ const base=process.argv[2]??'http://127.0.0.1:7864/';
 try{
  for(const width of [390,1280]){
  const p=await browser.newPage({viewport:{width,height:844}}),errors=[];p.on('pageerror',e=>errors.push(e.message));
- await p.addInitScript(()=>{
+ await p.addInitScript(()=>{if(localStorage.getItem('breathe.camera.v1')===null)localStorage.setItem('breathe.camera.v1','on');
   window.calls=0;window.tracks=[];const real=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
   navigator.mediaDevices.getUserMedia=async c=>{window.calls++;window.constraints=c;const fake=structuredClone(c);delete fake.video.facingMode;const s=await real(fake);window.tracks.push(...s.getTracks());return s;};
   const ch=new EventTarget();ch.startNotifications=async()=>ch;ch.stopNotifications=async()=>ch;
@@ -24,10 +24,11 @@ try{
  await p.screenshot({path:`/tmp/breathe-heart-${width}.png`});assert.deepEqual(errors,[]);await p.close();
  }
  // Pending acquisition is cancelled when entering Heart; late stream is stopped.
- const p=await browser.newPage();await p.addInitScript(()=>{const real=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);window.tracks=[];navigator.mediaDevices.getUserMedia=async c=>{const s=await real(c);window.tracks.push(...s.getTracks());await new Promise(r=>window.releaseCamera=r);return s;};});
+ const p=await browser.newPage();await p.addInitScript(()=>{if(localStorage.getItem('breathe.camera.v1')===null)localStorage.setItem('breathe.camera.v1','on');const real=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);window.tracks=[];navigator.mediaDevices.getUserMedia=async c=>{const s=await real(c);window.tracks.push(...s.getTracks());await new Promise(r=>window.releaseCamera=r);return s;};});
  await p.goto(base);await p.selectOption('#modeSelect','respiration');await p.click('#startBtn');await p.waitForFunction(()=>!!window.releaseCamera);await p.click('#heartSection');await p.evaluate(()=>releaseCamera());await p.waitForTimeout(500);assert.equal(await p.evaluate(()=>__breathe.controls.running),false);assert.equal(await p.evaluate(()=>tracks.every(t=>t.readyState==='ended')),true);await p.close();
  // Detector completion after OFF is closed; the next explicit start retries.
  const q=await browser.newPage();const modelRequests=[];q.on('request',r=>{if(/models|wasm/.test(r.url()))modelRequests.push(r.url());});
+ await q.addInitScript(()=>localStorage.setItem('breathe.camera.v1','on'));
  await q.route('**/vendor/vision_bundle.mjs',r=>r.fulfill({contentType:'text/javascript',body:`export const FilesetResolver={forVisionTasks:async()=>({})};export const FaceDetector={createFromOptions:async()=>{window.detectorCalls=(window.detectorCalls??0)+1;if(window.detectorCalls===1)await new Promise(r=>window.releaseDetector=r);return {close(){window.closedDetector=true;},detectForVideo(){return {detections:[]};}};}};`}));
  await q.goto(base);await q.waitForTimeout(150);assert.deepEqual(modelRequests,[],'idle does not initialize image features');await q.selectOption('#modeSelect','respiration');await q.click('#startBtn');await q.waitForFunction(()=>!!window.releaseDetector);await q.click('#cameraToggle');await q.evaluate(()=>releaseDetector());await q.waitForFunction(()=>!!window.closedDetector);assert.equal(await q.evaluate(()=>__breathe.controls.running),false);await q.click('#cameraToggle');await q.selectOption('#modeSelect','respiration');await q.click('#startBtn');await q.waitForFunction(()=>__breathe.controls.running);assert.equal(await q.evaluate(()=>detectorCalls),2);await q.click('#stopBtn');await q.close();
  console.log('PASS phone/desktop: remembered camera off, paced fallback, BLE HR-only Coherence, no face capture, rear-camera teardown, pending camera cancellation');
