@@ -1,11 +1,13 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.15.0';
+const VERSION = '0.16.0';
 let cameraEnabled = localStorage.getItem('breathe.camera.v1') !== 'off';
 let heartOpen = false;
 let bluetoothCoherence=false,heartController=null;
 import { renderLiveRates } from './live-rates.js';
+import { mountSessionTimer,pacedCyclesBetween } from './session-timer.js';
+let sessionTimer=null,limitTickAt=0,limitWasPaused=false,pacedBreaths=0;
 import { HeartSource } from './heart-source.js';
 const heartSource=new HeartSource();
 import { PulseSession } from './coherence.js';
@@ -913,6 +915,7 @@ function setControls() {
 
 async function start(continuation = false) {
   if (starting || running || heartOpen) return;
+  if(sessionTimer&&!sessionTimer.valid())return;
   if (!cameraEnabled && !guided() && !(mode()==='finger'&&bluetoothCoherence)) {
     $('modeSelect').value='guide'; $('modeSelect').onchange();
     announceChange('Camera OFF · using Fixed breathing. No image measurements.');
@@ -966,6 +969,9 @@ async function start(continuation = false) {
   window.breatheDebug?.startSignals?.({version:VERSION,mode:mode(),pattern:selectedPattern,pace:selectedPace,groupId,continuedFrom,browser:navigator.userAgent,camera:cameraTelemetry(),platform:navigator.platform,masterSound:soundOn,guideTone:guideToneOn,detectionTone:detectedToneOn});
   waveScale = 0; ringLevel = 0; lastTrackedT = -Infinity;
   guideStart = sessionStartT = performance.now();
+  limitTickAt=sessionStartT;limitWasPaused=false;pacedBreaths=0;
+  if(mode()==='finger'&&!bluetoothCoherence)heartSource.clear();
+  sessionTimer?.begin('main',coach||mode()==='finger'?'guided':'measured');
   steadySince = null; lastGuideInhale = null;
   if (soundOn && (pace || coach)) ensureAudio();
   clipBlob = null;
@@ -977,6 +983,9 @@ async function start(continuation = false) {
 
 function stop(forceSave = false, keepCamera = false) {
   if (!running) return;
+  updateSessionLimit();
+  if(!running)return;
+  sessionTimer?.finish('main','Session stopped',false);
   if(motionBuffer.length)debugEvent('motion-frames',{sourceFrames:motionBuffer.splice(0),grid:GRID});
   debugEvent('summary',{...session?.summary(),signal:undefined,mode:sessionMode,changes:sessionChanges});
   debugEvent('stop'); window.breatheDebug?.stop();
@@ -1227,6 +1236,7 @@ $('pauseBtn').onclick = () => {
   else { const gap = (now - pausedAt) / 1000; coach?.shiftTime(gap); guideStart += gap * 1000; sessionStartT += gap * 1000; if(pendingPace)pendingPace.at+=gap*1000; if(pendingPattern)pendingPattern.requestedAt+=gap; paused = false; }
   frameWindow={n:0,processing:0,interval:0,start:now};
   sessionChanges.push({t:(now-sessionStartT)/1000,event:paused?'pause':'resume'}); debugEvent(paused?'pause':'resume');
+  updateSessionLimit();
   pulse?.reset(); setHeartbeat(null); $('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--'; lastTrackedT = -Infinity; setControls();
 };
 $('exportBtn').onclick = exportCsv;
@@ -1450,6 +1460,7 @@ $('useGuideBtn').onclick=()=>{if(starting)return;$('modeSelect').value='guide';$
 $('undoChange').onclick = () => { const f = undoAction; undoAction = null; f?.(); $('switchNotice').hidden = true; };
 function applyPendingControls() {
   if(!pendingPace||performance.now()<pendingPace.at)return;
+  updateSessionLimit();if(!running||!pendingPace)return;
   session.paceBpm=pendingPace.value; guideStart=pendingPace.at; pendingPace=null; lastGuideInhale=null;
   debugEvent('pace-applied',{value:session.paceBpm}); syncQuickControls();
 }
@@ -1463,6 +1474,7 @@ function applyPendingPattern() {
 }
 function changePace(value, undo = true) {
   if(!PACES.includes(value))return;
+  updateSessionLimit();
   const prev=selectedPace; selectedPace=value; localStorage.setItem('breathe.pace',value);
   if(running&&!coach){
     const now=paused?pausedAt:performance.now(), target=Number(value)||null;
@@ -1574,6 +1586,23 @@ $('trackBtn').onclick = async () => {
   setControls();
 };
 
+function completionChime(){
+  if(!soundOn||audioCtx?.state!=='running')return;
+  const at=audioCtx.currentTime;
+  for(const [offset,hz] of [[0,523.25],[.3,659.25]]){const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type='sine';osc.frequency.value=hz;gain.gain.setValueAtTime(0,at+offset);gain.gain.linearRampToValueAtTime(.09,at+offset+.04);gain.gain.exponentialRampToValueAtTime(.001,at+offset+.7);osc.connect(gain).connect(audioCtx.destination);osc.start(at+offset);osc.stop(at+offset+.75);}
+}
+sessionTimer=mountSessionTimer({prepareCue(){if(soundOn)ensureAudio();},playCue:completionChime,onComplete(owner){if(owner==='main'){stop(true);continuedFrom=null;}else heartController?.endSession();}});
+function updateSessionLimit(){
+  if(!running||sessionTimer?.owner!=='main')return;
+  const now=performance.now();
+  if(!limitWasPaused)pacedBreaths+=pacedCyclesBetween(limitTickAt,now,session?.paceBpm,pendingPace);
+  limitTickAt=now;limitWasPaused=paused;
+  const breaths=coach?coach.breathCount:mode()==='finger'?Math.floor(pacedBreaths):session?.breaths.length??0;
+  const metrics=pulse?(mode()==='finger'?heartSource.snapshot(now):pulse.result??{}):{};
+  sessionTimer.tick('main',breaths,metrics,paused);
+}
+setInterval(updateSessionLimit,200);
+
 // ?coach or ?guide opens straight into that mode and starts it: for a home-screen icon or a Shortcut.
 const autoMode = ['coach', 'guide'].find((m) => new URLSearchParams(location.search).has(m));
 if (autoMode) {
@@ -1613,7 +1642,7 @@ $('cameraToggle').onclick = async () => {
 };
 renderCameraPreference();
 import { mountHeart } from './heart.js';
-heartController=mountHeart({ useInCoherence(){bluetoothCoherence=true;$('modeSelect').querySelector('[value=finger]').textContent='Coherence · Bluetooth';$('modeSelect').value='finger';$('modeSelect').onchange();start();}, source:heartSource, allowFingertip:()=>cameraEnabled, enter() {
+heartController=mountHeart({ canSessionStart:()=>sessionTimer.valid(), onSessionStart(){sessionTimer.begin('heart','guided');},onSessionTick(breaths,metrics){sessionTimer.tick('heart',breaths,metrics);},onSessionStop(show=true){sessionTimer.finish('heart','Heart session stopped',show);}, useInCoherence(){bluetoothCoherence=true;$('modeSelect').querySelector('[value=finger]').textContent='Coherence · Bluetooth';$('modeSelect').value='finger';$('modeSelect').onchange();start();}, source:heartSource, allowFingertip:()=>cameraEnabled, enter() {
   heartOpen=true; ++startGeneration; ++trackingRequest; starting=false;
   $('startBtn').disabled=false; $('modeSelect').disabled=false;
   stop(true); stopClip(); stopCamera(); tracking=false;

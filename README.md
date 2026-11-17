@@ -323,3 +323,25 @@ pace resets the RR window. HR swing is observed HR range, not a resonance score.
 Safari on iPhone lacks Web Bluetooth. Apple Watch via a native HealthKit wrapper
 is **planned**, with no simulated connection or data. See
 [the native follow-up design](docs/heart-native-follow-up.md).
+
+## Session limits (0.16.0)
+
+Open **Session timer** above the view. Choose 3/5/10/15/20 minutes, custom
+0.1–240 minutes, a whole-number breath target, or both. With both set, the first
+limit reached ends the session. No limits is the default; the last choices stay
+in this browser. Limits are locked during a session, and pauses exclude time.
+
+Breathe starts its timer with Start. Guided modes count completed guide breaths;
+the respiration tracker counts detected breaths. Fingertip/heart-only sessions
+count paced guide cycles when pace is enabled, not inferred breaths from HR.
+In Heart, **Start breathing guide** starts the session and its breath counter.
+The same timer works with Camera OFF, without any sensor connection.
+
+On completion the app stops the session and releases capture/sensor resources,
+plays a soft two-note chime when Sound is on, requests a short vibration where
+supported, and opens a short summary. It reports active duration, counted breaths,
+count-derived average rate (labeled guided or measured), HR average where samples
+were available, and the last valid RMSSD/coherence observations. Missing values
+stay unavailable. Heart summary data stays in memory; no new upload or persistence
+is added. Browser background suspension may delay stopping and the cue until the
+page runs again. Vibration/audio support and permissions vary by browser.
