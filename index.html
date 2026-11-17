@@ -23,7 +23,7 @@
       <span class="app-version" id="topVersion"></span>
       <button class="update-btn" id="updateBtn" hidden>Update<span class="sep"> · </span><span class="what">tap to reload</span></button>
     </div>
-    <label class="title"><span class="mode-word">Mode</span> <span class="select-wrap"><select id="modeSelect" aria-label="Breathing mode" title="Switch breathing mode"><option value="coach">Adaptive breathing</option><option value="guide">Fixed breathing</option><option value="respiration">Respiration Tracker</option><option value="finger">Coherence · fingertip</option><option value="remote">Coherence · hands-free</option></select><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg></span></label>
+    <label class="title"><span class="mode-word">Mode</span> <span class="select-wrap"><select id="modeSelect" aria-label="Breathing mode" title="Switch breathing mode"><option value="coach">Adaptive breathing</option><option value="guide">Fixed breathing</option><option value="respiration">Respiration Tracker</option><option value="finger">Fingertip · heart rate</option><option value="remote">Coherence · hands-free</option></select><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5z"/></svg></span></label>
     <div class="topright">
       <button id="debugChip" class="debug-chip" type="button">Debug ON</button>
       <button class="icon-btn" id="soundBtn" data-muted="false" aria-label="Sound controls" aria-haspopup="dialog" aria-controls="soundSheet" title="Sound controls">
@@ -34,6 +34,29 @@
     </div>
   </header>
 
+  <nav class="section-nav" aria-label="Breathe sections"><button id="breatheSection" type="button" aria-pressed="true">Breathe</button><button id="heartSection" type="button" aria-pressed="false">Heart</button></nav>
+  <div class="camera-preference"><button id="cameraToggle" type="button" role="switch" aria-checked="true" aria-describedby="cameraHelp">Camera ON</button><span id="cameraHelp"></span></div>
+  <section id="heartSectionPanel" class="heart-panel" hidden aria-labelledby="heartTitle">
+    <h1 id="heartTitle">Heart</h1><p>No face camera · fingertip PPG or Bluetooth sensor</p>
+    <label>Heart source <select id="heartSource"><option value="bluetooth">Bluetooth HR sensor</option><option value="fingertip">Fingertip · rear camera + torch</option></select></label>
+    <p id="heartSupport"></p><p id="heartQuality" role="status">Signal: waiting</p>
+    <div class="row"><button id="heartConnect" class="btn primary" type="button">Connect sensor</button><button id="heartDisconnect" class="btn secondary" type="button" disabled>Disconnect</button></div>
+    <button id="useHeartCoherence" class="btn secondary" type="button">Use Bluetooth in Coherence</button>
+    <p id="heartStatus" role="status">No sensor connected.</p>
+    <div class="heart-metrics"><div>Heart rate<strong id="bleHR">—</strong><small>bpm</small></div><div>HRV · RMSSD<strong id="bleRMSSD">—</strong><small>ms · last 60 seconds of RR</small></div><div>HR swing<strong id="bleSwing">—</strong><small>bpm · last 60 seconds</small></div></div>
+    <p>Coherence <strong id="bleCoherence">—</strong></p><p id="heartDegradation" class="muted">Coherence needs beat-to-beat data.</p>
+    <p class="muted">Fingertip PPG is an experimental estimate. Keep still and touch lightly; pressure, motion, lighting and camera timing affect accuracy. A BLE strap with RR support is generally more suitable for beat timing. Not a medical device or diagnostic measurement.</p>
+    <h2>Breathing &amp; heart rhythm</h2>
+    <label>Guide pace <select id="heartPace"><option value="5">5 breaths/min</option><option value="5.5">5.5 breaths/min</option><option value="6" selected>6 breaths/min</option><option value="6.5">6.5 breaths/min</option><option value="7">7 breaths/min</option></select></label>
+    <button id="heartGuide" class="btn secondary" type="button" aria-pressed="false">Start breathing guide</button>
+    <p id="heartPhase">Guide stopped.</p>
+    <canvas id="bleChart" width="800" height="240" aria-label="Measured heart rate, teal, and paced breathing reference, grey dashed" role="img"></canvas>
+    <p>Teal: measured heart rate. Dashed grey: breathing guide (a timing reference, not measured breathing).</p>
+    <p id="heartCoupling">Start the guide and collect 30 seconds of RR intervals to explore coupling.</p>
+    <p class="muted">Explore a comfortable pace and observe how your heart rhythm changes. Coupling is an exploratory correlation with the guide, not a measured breathing rate or a validated resonance score. HRV needs RR intervals; some straps and watches broadcast only HR. Motion, missed beats and irregular rhythms affect the result. Breathe naturally if uncomfortable.</p>
+    <details><summary>iPhone &amp; Apple Watch · native follow-up</summary><p>iOS Safari lacks Web Bluetooth. Apple Watch heart rate needs a native iPhone/watchOS companion with HealthKit permission and a live workout session. That integration is planned, not available here. HealthKit HRV is SDNN, not live RR-derived RMSSD; never substitute it. See the native design in the source documentation.</p></details>
+    <p>Fingertip uses only the rear camera; Bluetooth uses no camera. All sensor data stays in this page’s memory. Disconnect or leave Heart to clear it. Nothing is uploaded or saved.</p>
+  </section>
   <p id="switchNotice" class="switch-notice" role="status" hidden><span></span> <button id="undoChange" type="button">Undo</button></p>
   <aside id="trackingNotice" class="tracking-notice" role="status" hidden><strong id="trackingTitle"></strong><span id="trackingFix"></span><button id="useGuideBtn" type="button" hidden>Use Fixed breathing</button></aside>
   <section class="card" aria-live="polite">
@@ -51,7 +74,7 @@
     </div>
   </section>
 
-  <section id="pulsePanel" hidden><p id="pulseQuality">Waiting for camera</p><div class="pulseMetrics">
+  <section id="pulsePanel" hidden><p id="mainHeartSource">Fingertip PPG · rear camera</p><p class="muted hint">For Bluetooth, connect in Heart and choose Use Bluetooth in Coherence. Coherence needs beat-to-beat data; estimates are experimental, not medical.</p><p id="pulseQuality">Waiting for camera</p><div class="pulseMetrics">
       <div class="metric hr"><span class="k"><svg id="heartIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.2 2.9 4.5 6.6 4.5c2 0 3.6 1 5.4 3 1.8-2 3.4-3 5.4-3 3.7 0 5.7 3.7 4.2 7.2C19.5 16.4 12 21 12 21z"/></svg>Heart rate</span><span class="v"><strong id="heartRate">--</strong><small>bpm est.</small></span></div>
       <div class="metric" id="breathMetric" hidden><span class="k">Breathing</span><span class="v"><strong id="breathRate">--</strong><small>/min</small></span></div>
       <div class="metric" id="rmssdMetric"><span class="k">RMSSD</span><span class="v"><strong id="rmssd">--</strong><small>ms</small></span></div>
@@ -194,6 +217,6 @@
     </div>
   </div>
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.14.1"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.15.0"></script>
 </body>
 </html>

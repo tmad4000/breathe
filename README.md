@@ -286,3 +286,40 @@ commit, `commitTime` (also `committerTime`), `buildTime` and `event`.
 The source-controlled `version.json` is an unstamped local-development template;
 its null timestamps are never replaced with a guessed visit time. The shared
 stamp renderer comes from the app-principles kit, without a new dependency.
+
+## Camera choice & Heart (0.15.0)
+
+Use **Camera ON / Camera OFF** above the main view. OFF is remembered in this
+browser, releases tracks and image processing, and uses the existing breathing
+guide. Bluetooth remains available without camera permission. Fingertip PPG
+requires Camera ON and an actual rear camera (no front-camera fallback). Starting a camera-only mode while OFF switches to Fixed breathing; guide
+rates are labeled as guide rates, not measured breathing. Turning ON makes camera
+tracking available on the next start or explicit Tracking on action.
+
+**Heart** is a separate no-face-camera section with a source selector. Fingertip
+uses the rear camera plus torch when available; Bluetooth uses no camera. The
+existing main Fingertip mode and Heart consume the same source contract. Connect
+Bluetooth in Heart and choose **Use Bluetooth in Coherence** for the main view.
+Coherence uses the existing 64-second RR spectral calculation and degrades to HR
+only when RR is missing or PPG quality is poor, with an explicit explanation.
+Fingertip PPG is experimental and not medical; pressure, motion, light and camera
+timing affect accuracy. Connect a BLE strap/watch advertising
+the standard Heart Rate Service in supported Chrome desktop/Android environments
+over HTTPS. The browser's device chooser requires a click. HR comes from the
+sensor; RMSSD uses successive RR differences over up to 60 seconds, after 20
+intervals. RR outside 300–2000 ms clears the contiguous segment; no advanced
+artifact correction is claimed. Missing contact, disconnect, invalid packets,
+backgrounding, or stale data clears live values. HR-only sensors cannot provide
+RMSSD or coupling. No HR-to-RR conversion is used. Sensor data stays in page
+memory and is cleared when disconnected or leaving Heart; it is not sent to the
+camera session recorder or uploaded.
+
+The breathing guide offers 5–7 breaths/min. The plot overlays measured HR and a
+clearly labeled guide reference. Coupling is squared correlation of RR against
+sine/cosine at the chosen guide frequency (at least 30 seconds / 25 RR intervals),
+not measured breathing, a validated resonance score or medical advice. Changing
+pace resets the RR window. HR swing is observed HR range, not a resonance score.
+
+Safari on iPhone lacks Web Bluetooth. Apple Watch via a native HealthKit wrapper
+is **planned**, with no simulated connection or data. See
+[the native follow-up design](docs/heart-native-follow-up.md).
