@@ -1,8 +1,8 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.16.0';
-let cameraEnabled = localStorage.getItem('breathe.camera.v1') !== 'off';
+const VERSION = '0.16.1';
+let cameraEnabled = localStorage.getItem('breathe.camera.v1') === 'on';
 let heartOpen = false;
 let bluetoothCoherence=false,heartController=null;
 import { renderLiveRates } from './live-rates.js';
@@ -1084,9 +1084,10 @@ document.addEventListener('visibilitychange', async () => {
   requestWakeLock();
   if (soundOn && audioCtx && audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
   if (coach && !tracking) return;   // guiding without the camera: nothing to reopen
-  // iOS ends the camera track when the app is backgrounded; reopen it.
-  if (!stream || stream.getVideoTracks().every((tr) => tr.readyState === 'ended')) {
-    try { await startCamera(); } catch (err) { setStatus(cameraErrorText(err)); }
+  // A page becoming visible is not a fresh camera permission gesture.
+  if (stream && !stream.native && !TEST_SRC && stream.getVideoTracks().some(tr=>tr.readyState==='ended')) {
+    stop(true);
+    setStatus('Camera ended while away. Tap Start to reconnect.');
   }
 });
 
@@ -1609,7 +1610,8 @@ if (autoMode) {
   $('modeSelect').value = autoMode;
   $('modeSelect').onchange();
   // New visitors see the recording notice before a shortcut can record.
-  if(localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled)start();
+  if((autoMode==='guide'||!cameraEnabled)&&(localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled))start();
+  else if(autoMode==='coach'&&cameraEnabled)setStatus('Tap Start to enable camera tracking.');
 }
 
 // One persistent camera permission choice, separate from the visual tile setting.

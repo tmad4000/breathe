@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import {launch} from './browser.mjs';
+const b=await launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});const base=process.argv[2]??'http://127.0.0.1:7538/';
+try{
+ const p=await b.newPage();await p.addInitScript(()=>{window.requests=[];window.tracks=[];const real=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async c=>{requests.push(c);const s=await real(c);tracks.push(...s.getTracks());return s;};localStorage.setItem('breathe.debug.notice','seen');});
+ await p.goto(base+'?coach');await p.waitForTimeout(250);assert.equal(await p.locator('#cameraToggle').textContent(),'Camera OFF');assert.equal(await p.evaluate(()=>requests.length),0);
+ await p.click('#cameraToggle');await p.reload();assert.equal(await p.locator('#cameraToggle').textContent(),'Camera ON');await p.waitForTimeout(250);assert.equal(await p.evaluate(()=>requests.length),0,'saved ON shortcut still waits for click');assert.equal(await p.evaluate(()=>__breathe.controls.running),false);
+ await p.click('#startBtn');await p.waitForFunction(()=>__breathe.controls.running);assert.equal(await p.evaluate(()=>requests.length),1);assert.equal(await p.evaluate(()=>requests[0].audio),false);
+ await p.evaluate(()=>{tracks.forEach(t=>t.stop());document.dispatchEvent(new Event('visibilitychange'));});await p.waitForFunction(()=>!__breathe.controls.running);assert.equal(await p.evaluate(()=>requests.length),1,'visibility never reacquires');assert.match(await p.locator('#status').textContent(),/Tap Start/);
+ await p.click('#cameraToggle');await p.reload();await p.waitForTimeout(250);assert.equal(await p.locator('#cameraToggle').textContent(),'Camera OFF');assert.equal(await p.evaluate(()=>requests.length),0);await p.click('#heartSection');assert.equal(await p.evaluate(()=>requests.length),0);console.log('PASS: default OFF, saved OFF/ON reload, coach navigation no capture, only explicit Start capture, audio false, ended track no automatic reacquisition');
+}finally{await b.close();}

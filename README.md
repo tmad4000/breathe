@@ -345,3 +345,15 @@ were available, and the last valid RMSSD/coherence observations. Missing values
 stay unavailable. Heart summary data stays in memory; no new upload or persistence
 is added. Browser background suspension may delay stopping and the cue until the
 page runs again. Vibration/audio support and permissions vary by browser.
+
+
+### Camera permission entry (0.16.1)
+
+First-use Camera defaults OFF; an explicit ON/OFF choice persists in this
+browser. No microphone is requested (`audio: false`). Camera requests originate
+from Start / Tracking on / rear-camera Start fingertip or an explicit camera
+switch. A `?coach` shortcut with saved Camera ON waits for Start, rather than
+requesting permission on navigation. Camera-free shortcuts can still start the
+guide. If a camera track ends while backgrounded, returning stops that session
+and asks for Start to reconnect; visibility alone never reopens the camera.
+HealthKit remains design-only.
