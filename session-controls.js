@@ -1,5 +1,5 @@
 // Display vocabulary only. Stored mode IDs and session records stay compatible.
-export const MODE_NAMES = Object.freeze({coach:'Adaptive breathing',guide:'Fixed breathing',respiration:'Respiration Tracker',finger:'Coherence · fingertip',remote:'Coherence · hands-free',dual:'Coherence · two cameras'});
+export const MODE_NAMES = Object.freeze({coach:'Adaptive breathing',guide:'Fixed breathing',respiration:'Respiration Tracker',finger:'Fingertip · heart rate',remote:'Coherence · hands-free',dual:'Coherence · two cameras'});
 export const modeName = id => MODE_NAMES[id] ?? id;
 export const PATTERN_NAMES = Object.freeze({
   '5-1-5-1': {short:'5–1–5–1',full:'5 seconds in, hold 1, 5 out, hold 1'},

@@ -1,8 +1,13 @@
 import { FaceDetector, FilesetResolver } from './vendor/vision_bundle.mjs';
 import { rgbaToGray, blockFlows, RespirationSession } from './signal.js';
 
-const VERSION = '0.14.1';
+const VERSION = '0.15.0';
+let cameraEnabled = localStorage.getItem('breathe.camera.v1') !== 'off';
+let heartOpen = false;
+let bluetoothCoherence=false,heartController=null;
 import { renderLiveRates } from './live-rates.js';
+import { HeartSource } from './heart-source.js';
+const heartSource=new HeartSource();
 import { PulseSession } from './coherence.js';
 import { Coach, PATTERNS } from './coach.js';
 import { modeName, PATTERN_NAMES, PACES, nextPaceBoundary, guidePlotBounds } from './session-controls.js';
@@ -69,6 +74,7 @@ let detector = null;
 let detectorPromise = null;
 let stream = null;
 let cameraGeneration = 0;
+let startGeneration = 0;
 let facing = 'user';
 let mirrored = true;
 const TEST_SRC = new URLSearchParams(location.search).get('src');
@@ -108,7 +114,7 @@ $('topVersion').textContent = `v${VERSION}`;
 function setTitle() {
   const sel = $('modeSelect');
   const sheet = [...document.querySelectorAll('.sheet')].find((el) => !el.hidden);
-  const what = sel.options[sel.selectedIndex].text;
+  const what = bluetoothCoherence&&mode()==='finger'?'Coherence · Bluetooth':sel.options[sel.selectedIndex].text;
   document.title = `${sheet ? `${sheet.querySelector('h2').textContent} · ` : ''}${what} — Breathe`;
 }
 if (NATIVE) { $('modeSelect').add(new Option('Coherence · two cameras', 'dual')); }
@@ -142,18 +148,27 @@ window.__breatheNative = {
 // ---------- setup ----------
 
 function loadDetector() {
-  detectorPromise ??= (async () => {
+  if(detector)return Promise.resolve();
+  if(!cameraEnabled||heartOpen)return Promise.reject(new DOMException('Camera off','AbortError'));
+  if(detectorPromise)return detectorPromise;
+  const pending= (async () => {
+    const generation=cameraGeneration;
     const fileset = await FilesetResolver.forVisionTasks(new URL('./vendor/wasm', import.meta.url).href);
-    detector = await FaceDetector.createFromOptions(fileset, {
+    const loaded = await FaceDetector.createFromOptions(fileset, {
       baseOptions: { modelAssetPath: new URL('./models/blaze_face_short_range.tflite', import.meta.url).href, delegate: 'CPU' },
       runningMode: 'VIDEO',
       minDetectionConfidence: 0.5,
     });
+    if(generation!==cameraGeneration||!cameraEnabled||heartOpen){loaded.close();throw new DOMException('Image features stopped','AbortError');}
+    detector=loaded;
   })();
-  return detectorPromise;
+  detectorPromise=pending;
+  pending.catch(()=>{if(detectorPromise===pending)detectorPromise=null;});
+  return pending;
 }
 
 async function startCamera() {
+  if (!cameraEnabled || heartOpen) throw new DOMException('Camera is off', 'AbortError');
   stopCamera();
   const requestedGeneration=cameraGeneration;
   pulse?.reset();
@@ -184,7 +199,7 @@ async function startCamera() {
   } else {
     const acquired = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      video: { facingMode: mode()==='finger'?{exact:'environment'}:facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
     });
     if(requestedGeneration!==cameraGeneration){acquired.getTracks().forEach(t=>t.stop());throw new DOMException('Camera request superseded','AbortError');}
     stream=acquired;
@@ -216,6 +231,10 @@ function stopCamera() {
   nativeReady = null;
   stream?.getTracks().forEach((t) => t.stop());
   stream = null;
+  video.pause(); video.srcObject = null;
+  if (TEST_SRC) { video.removeAttribute('src'); video.load(); }
+  octx.clearRect(0,0,overlay.width,overlay.height);
+  nativeCtx.clearRect(0,0,nativeView.width,nativeView.height);
 }
 
 function scheduleFrame() {
@@ -716,17 +735,20 @@ function setStatus(text) {
 function updateUi(t, faceOk) {
   if (!running) return;
   if(pulse){
-    const r=!paused ? pulse.result:null;
+    if(mode()==='finger'&&!bluetoothCoherence)heartSource.fingertip(pulse,t);
+    const shared=mode()==='finger'?heartSource.snapshot(t):null;
+    const r=!paused ? (shared?shared.hr!==null?{hr:shared.hr,rmssd:shared.rmssd,coherence:shared.coherence}:null:pulse.result):null;
     renderLiveRates(document,r?.hr,null);
     setHeartbeat(r?.hr);
     $('rmssd').textContent=r?.rmssd?.toFixed(0)??'--';
     const co=r?.coherence;
     $('coherence').textContent=co?`${co.ratio<.5?'Low':co.ratio<2?'Medium':'High'} · ${co.ratio.toFixed(1)}`:'--';
     $('pulseQuality').textContent=paused?'Paused':r?`Signal: usable · ${co?'64 s window':pulse.warmupSeconds()>0?'Coherence in '+pulse.warmupSeconds()+' s':'Analyzing coherence…'}${r.coupling!=null?' · coupling '+Math.round(r.coupling*100)+'%':''}`:`Signal: waiting / poor · Coherence in ${pulse.warmupSeconds()} s of usable signal`;
+    if(shared&&!shared.beatToBeat)$('pulseQuality').textContent=`Signal: ${shared.quality} · coherence needs beat-to-beat data`;
     drawPulseTrend(!!r);
     if(mode()==='finger'){
       $('bpm').textContent=co?co.ratio.toFixed(1):r?String(Math.round(r.hr)):'--';$('ringUnit').textContent=co?'coherence':'heart bpm';document.querySelector('.ring').setAttribute('aria-label',co?'Coherence score and breathing guide':'Heart rate and breathing guide');$('elapsed').textContent=fmtDuration((t-guideStart)/1000);
-      const guide=guidePhase();setStatus(paused?'Paused. Tap Resume.':`${guide?(guide.inhale?'Breathe in… ':'Breathe out… '):''}Cover the rear lens gently with your fingertip. ${torchNote}`);return;
+      const guide=guidePhase();setStatus(paused?'Paused. Tap Resume.':`${guide?(guide.inhale?'Breathe in… ':'Breathe out… '):''}${bluetoothCoherence?'Bluetooth HR sensor · no camera.':'Cover the rear lens gently with your fingertip. '+torchNote}`);return;
     }
   }
   // Never show a stale number: blank the rate as soon as tracking is lost or you
@@ -890,7 +912,12 @@ function setControls() {
 }
 
 async function start(continuation = false) {
-  if (starting || running) return;
+  if (starting || running || heartOpen) return;
+  if (!cameraEnabled && !guided() && !(mode()==='finger'&&bluetoothCoherence)) {
+    $('modeSelect').value='guide'; $('modeSelect').onchange();
+    announceChange('Camera OFF · using Fixed breathing. No image measurements.');
+  }
+  const startToken=++startGeneration;
   localStorage.setItem('breathe.debug.notice','seen'); $('debugNotice').hidden=true;
   closeSessionMenu(false); starting=true; syncQuickControls();
   if (!continuation && !continuedFrom) { groupId = crypto.randomUUID(); }
@@ -902,14 +929,16 @@ async function start(continuation = false) {
   if (soundOn && wantsSound) ensureAudio();
   $('modeSelect').disabled = true;
   tracking = false; coachNote = '';
-  if (mode() !== 'guide') {
+  if (mode() !== 'guide' && cameraEnabled && !(mode()==='finger'&&bluetoothCoherence)) {
     setStatus('Starting camera…');
     try {
       if (!stream) await startCamera();
       setStatus('Loading tracker…');
       if(mode() !== 'finger') await loadDetector();
+      if(startToken!==startGeneration)return;
       tracking = mode() === 'coach';
     } catch (err) {
+      if(startToken!==startGeneration)return;
       stopCamera();
       if (mode() !== 'coach') {
         $('modeSelect').disabled = false;
@@ -922,7 +951,8 @@ async function start(continuation = false) {
     }
   }
   if (guided()) video.hidden = !tracking;
-  pulse = chestOnly() ? null : new PulseSession(mode() === 'remote');
+  pulse = chestOnly() ? null : mode()==='finger'&&bluetoothCoherence ? bluetoothPulse() : new PulseSession(mode() === 'remote');
+  $('mainHeartSource').textContent=bluetoothCoherence&&mode()==='finger'?'Bluetooth HR · no camera':'Fingertip PPG · rear camera';
   const pace = guided() ? null : Number(selectedPace) || null;
   activePattern = selectedPattern;
   coach = guided() ? new Coach(performance.now() / 1000, { pattern: PATTERNS[selectedPattern] ?? PATTERNS['5-1-5-1'], adaptive: mode() === 'coach' }) : null; coachLastTurn = -Infinity; coachSeenAt = -Infinity;
@@ -957,7 +987,7 @@ function stop(forceSave = false, keepCamera = false) {
   releaseWakeLock();
   stopClip();
   if(!keepCamera)stopCamera();
-  if(pulse){saveSession({startedAt: new Date(session.startedWallMs).toISOString(),durationS:(stoppedAt-sessionStartT)/1000,mode:sessionMode,groupId,continuedFrom,changes:sessionChanges,trend:[],breathTimes:[],breaths:0,avgBpm:null});pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;setHeartbeat(null);$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
+  if(pulse){if(bluetoothCoherence){heartController?.disconnect();bluetoothCoherence=false;$('modeSelect').querySelector('[value=finger]').textContent='Fingertip · heart rate';setTitle();}saveSession({startedAt: new Date(session.startedWallMs).toISOString(),durationS:(stoppedAt-sessionStartT)/1000,mode:sessionMode,groupId,continuedFrom,changes:sessionChanges,trend:[],breathTimes:[],breaths:0,avgBpm:null});pulse.reset();$('bpm').textContent='--';drawPulseTrend(false);$('ringFill').style.strokeDashoffset=RING_LEN;setHeartbeat(null);$('heartRate').textContent=$('rmssd').textContent=$('coherence').textContent='--';$('pulseQuality').textContent='Stopped';$('breathRate').textContent='--';setStatus('Session stopped. Tap Start to measure again.');return;}
   const summary = session.summary();
   summary.groupId = groupId; summary.continuedFrom = continuedFrom;
   summary.mode = sessionMode; summary.changes = sessionChanges;
@@ -1283,7 +1313,7 @@ $('flipBtn').onclick = async () => {
   if (stream) { try { await startCamera(); } catch (err) { setStatus(cameraErrorText(err)); } }
 };
 
-loadDetector().catch(() => {}); // warm up while the user gets positioned
+// Detector loads only after an explicit tracking start; no image warmup while idle. // warm up while the user gets positioned
 
 // Update notice: when the deployed version.json is newer, the version text in the
 // top-left becomes "Update · tap to reload". It never reloads by itself; tapping
@@ -1525,7 +1555,7 @@ window.addEventListener('resize',()=>closeSessionMenu());
 
 // Tracking on/off during a coach session. Off releases the camera and carries on as a guide.
 $('trackBtn').onclick = async () => {
-  if (!coach || !running) return;
+  if (!coach || !running || !cameraEnabled || heartOpen) return;
   const now = performance.now() / 1000, trackerCoach=coach, request=++trackingRequest;
   if (tracking) {
     tracking = false; stopCamera(); video.hidden = true;   // the slot stays; only its picture goes
@@ -1552,3 +1582,58 @@ if (autoMode) {
   // New visitors see the recording notice before a shortcut can record.
   if(localStorage.getItem('breathe.debug.notice')==='seen'||!window.breatheDebug.enabled)start();
 }
+
+// One persistent camera permission choice, separate from the visual tile setting.
+function renderCameraPreference() {
+  $('cameraToggle').textContent = cameraEnabled ? 'Camera ON' : 'Camera OFF';
+  $('cameraToggle').setAttribute('aria-checked', String(cameraEnabled));
+  document.body.classList.toggle('camera-off', !cameraEnabled);
+  $('trackBtn').disabled = !cameraEnabled;
+  $('cameraHelp').textContent = cameraEnabled
+    ? 'Camera features are available when you start a tracking mode.'
+    : 'Camera and image features are off. Start uses paced breathing; no image measurements.';
+}
+$('cameraToggle').onclick = async () => {
+  cameraEnabled = !cameraEnabled;
+  localStorage.setItem('breathe.camera.v1', cameraEnabled ? 'on' : 'off');
+  if (!cameraEnabled) {
+    ++trackingRequest; ++startGeneration; starting=false;
+    $('startBtn').disabled=false; $('modeSelect').disabled=false;
+    stopClip(); stopCamera(); tracking=false;
+    detector?.close?.(); detector=null; detectorPromise=null;
+    video.hidden=true; nativeView.hidden=true;
+    const resume=running&&!paused;
+    if(running) stop(true);
+    if(!guided()) { $('modeSelect').value='guide'; await $('modeSelect').onchange(); }
+    if(resume) await start(true);
+    coach?.setTracking(false,performance.now()/1000);
+    setStatus('Camera OFF · follow the breathing guide. No image measurements.');
+  }
+  renderCameraPreference(); setControls();
+};
+renderCameraPreference();
+import { mountHeart } from './heart.js';
+heartController=mountHeart({ useInCoherence(){bluetoothCoherence=true;$('modeSelect').querySelector('[value=finger]').textContent='Coherence · Bluetooth';$('modeSelect').value='finger';$('modeSelect').onchange();start();}, source:heartSource, allowFingertip:()=>cameraEnabled, enter() {
+  heartOpen=true; ++startGeneration; ++trackingRequest; starting=false;
+  $('startBtn').disabled=false; $('modeSelect').disabled=false;
+  stop(true); stopClip(); stopCamera(); tracking=false;
+  detector?.close?.(); detector=null; detectorPromise=null;
+  closeSessionMenu(false);
+  document.querySelectorAll('.sheet').forEach(el=>{el.hidden=true;});
+  document.body.classList.add('heart-open');
+  document.title='Heart — Breathe';
+}, leave() {
+  heartOpen=false; document.body.classList.remove('heart-open');
+  setTitle(); renderCameraPreference(); setControls();
+}});
+
+// Compatibility adapter lets the existing Coherence view consume the same source
+// contract as Heart without synthesizing camera samples or RR intervals.
+function bluetoothPulse(){return {
+ remote:false,
+ get result(){const s=heartSource.snapshot(performance.now());return s.hr===null?null:{hr:s.hr,rmssd:s.rmssd,coherence:s.coherence};},
+ get rr(){return heartSource.snapshot(performance.now()).points.map(p=>({t:p.t/1000,v:p.v}));},
+ get hr(){return this.rr.map(p=>({t:p.t,v:60000/p.v}));},
+ get lastInput(){return performance.now()/1000;},
+ reset(){heartSource.clear();},loseSignal(){},push(){},warmupSeconds(){return 64;}
+};}
