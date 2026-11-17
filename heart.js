@@ -1,11 +1,11 @@
 import {parseHeartMeasurement,guideCoupling} from './heart-signal.js';
 import {PulseSession} from './coherence.js';
-export function mountHeart({enter,leave,source,allowFingertip,useInCoherence}) {
+export function mountHeart({enter,leave,source,allowFingertip,useInCoherence,canSessionStart,onSessionStart,onSessionTick,onSessionStop}) {
   const $=id=>document.getElementById(id),data=source.window;
   let camera=null,ppg=null,frameId=null,torchNote='',lastFrame=-1,lastAnalysis=-1;
   const video=document.createElement('video');video.muted=true;video.playsInline=true;
   const crop=document.createElement('canvas');crop.width=crop.height=48;const cx=crop.getContext('2d',{willReadFrequently:true});
-  let active=false,device=null,characteristic=null,generation=0,guideStart=null,hrHistory=[];
+  let active=false,device=null,characteristic=null,generation=0,guideStart=null,hrHistory=[],guideBreaths=0;
   const supported=!!navigator.bluetooth?.requestDevice&&window.isSecureContext;
   $('heartSupport').textContent=supported?'Use a strap or watch broadcasting the standard Bluetooth Heart Rate Service. Chrome desktop/Android support depends on your operating system and sensor.':'Web Bluetooth is unavailable here. Try a supported Chrome desktop/Android browser over HTTPS. iOS Safari needs the native HealthKit follow-up below.';
   $('heartConnect').disabled=$('heartSource').value==='bluetooth'&&!supported;
@@ -75,13 +75,14 @@ export function mountHeart({enter,leave,source,allowFingertip,useInCoherence}) {
   }
   $('heartDisconnect').onclick=()=>disconnect();
   $('heartSource').onchange=()=>{disconnect('Source changed. Connect when ready.');$('heartSupport').textContent=$('heartSource').value==='fingertip'?'Rear camera required. Cover the rear lens lightly, keep still, and allow several seconds for a usable signal. Torch availability depends on your phone.':supported?'Connect a sensor broadcasting the standard Bluetooth Heart Rate Service. RR support is required for HRV.':'Web Bluetooth is unavailable. iOS Safari needs the native HealthKit follow-up.';$('heartConnect').textContent=$('heartSource').value==='fingertip'?'Start fingertip':'Connect sensor';};
-  function guideReset(){guideStart=null;$('heartGuide').textContent='Start breathing guide';$('heartGuide').setAttribute('aria-pressed','false');}
+  function guideReset(show=true){if(guideStart!==null){onSessionTick(guideBreaths+Math.floor((performance.now()-guideStart)/60000*Number($('heartPace').value)),source.snapshot(performance.now()));onSessionStop(show);}guideStart=null;guideBreaths=0;$('heartGuide').textContent='Start breathing guide';$('heartGuide').setAttribute('aria-pressed','false');}
   $('heartSection').onclick=()=>{if(active)return;active=true;enter();$('heartSectionPanel').hidden=false;$('heartSection').setAttribute('aria-pressed','true');$('breatheSection').setAttribute('aria-pressed','false');render();};
   function returnToBreathe(keep=false){if(!active)return;active=false;if(!keep)disconnect();guideReset();$('heartSectionPanel').hidden=true;$('heartSection').setAttribute('aria-pressed','false');$('breatheSection').setAttribute('aria-pressed','true');leave();}
   $('breatheSection').onclick=()=>returnToBreathe();
   $('useHeartCoherence').onclick=()=>{if(!device){status('Connect a Bluetooth sensor first. Fingertip is available directly in the main mode menu.');return;}returnToBreathe(true);useInCoherence();};
-  $('heartGuide').onclick=()=>{if(guideStart!==null)guideReset();else{guideStart=performance.now();source.clear();$('heartGuide').textContent='Stop breathing guide';$('heartGuide').setAttribute('aria-pressed','true');}render();};
-  $('heartPace').onchange=()=>{source.clear();if(guideStart!==null)guideStart=performance.now();render();};
+  $('heartGuide').onclick=()=>{if(guideStart!==null){guideReset();disconnect('Heart session stopped. Sensor released.');}else{if(!canSessionStart())return;guideStart=performance.now();guideBreaths=0;onSessionStart();source.clear();$('heartGuide').textContent='Stop breathing guide';$('heartGuide').setAttribute('aria-pressed','true');}render();};
+  let lastPace=Number($('heartPace').value);
+  $('heartPace').onchange=()=>{if(guideStart!==null){guideBreaths+=Math.floor((performance.now()-guideStart)/60000*lastPace);guideStart=performance.now();}lastPace=Number($('heartPace').value);source.clear();render();};
   function render(){
     const now=performance.now(),bpm=Number($('heartPace').value),snap=source.snapshot(now,bpm),guiding=guideStart!==null;
     $('bleHR').textContent=snap.hr===null?'—':Math.round(snap.hr);
@@ -92,6 +93,7 @@ export function mountHeart({enter,leave,source,allowFingertip,useInCoherence}) {
     $('bleRMSSD').textContent=value===null?'—':value.toFixed(1);
     const recent=snap.hr===null?[]:hrHistory.filter(p=>now-p.t<=60000);
     $('bleSwing').textContent=recent.length<2?'—':(Math.max(...recent.map(p=>p.v))-Math.min(...recent.map(p=>p.v))).toFixed(1);
+    if(guiding)onSessionTick(guideBreaths+Math.floor((now-guideStart)/60000*bpm),snap);
     const phase=guiding?((now-guideStart)/60000*bpm)%1:0;
     $('heartPhase').textContent=guiding?`${phase<0.5?'Breathe in':'Breathe out'} · ${bpm} breaths/min guide`:'Guide stopped.';
     const coupling=guiding&&snap.beatToBeat?guideCoupling(snap.points.filter(p=>p.t>=guideStart&&p.t>=now-60000),bpm):null;
@@ -105,5 +107,5 @@ export function mountHeart({enter,leave,source,allowFingertip,useInCoherence}) {
   setInterval(()=>{if(active)render();},250);
   window.addEventListener('pagehide',()=>{disconnect();guideReset();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&(active||device||camera)){disconnect('Paused in background. Reconnect when ready.');guideReset();}});
-  return {disconnect};
+  return {disconnect,endSession(){guideReset(false);disconnect('Session complete. Sensor released.');}};
 }

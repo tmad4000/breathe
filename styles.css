@@ -478,7 +478,9 @@ body.respiration #respIdleStatus .switch-notice { position:static; width:100%; m
 .heart-metrics {display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:28px 0}
 .heart-metrics strong,.heart-metrics small {display:block}.heart-metrics strong {font-size:38px;font-variant-numeric:tabular-nums}
 body.heart-open {display:block;overflow:auto;height:auto;min-height:100dvh}
-body.heart-open > :not(.topbar):not(.section-nav):not(#heartSectionPanel):not(script) {display:none!important}
+body.heart-open > :not(.topbar):not(.section-nav):not(#heartSectionPanel):not(#sessionTimer):not(#timerSummary):not(script) {display:none!important}
 body.heart-open .topbar .title,body.heart-open .topright {visibility:hidden}
 body.camera-off #video,body.camera-off #nativeView,body.camera-off #camSlot,body.camera-off #flipBtn,body.camera-off #trackBtn {display:none!important}
 @media(max-width:600px){.camera-preference{align-items:flex-start}.heart-panel{padding:18px}.heart-metrics{gap:8px}.heart-metrics strong{font-size:29px}.heart-metrics small{font-size:11px}}
+
+.session-timer {flex:none;margin:0 16px 8px;font-size:13px;border:1px solid var(--border);border-radius:10px;padding:8px 12px}.session-timer summary{cursor:pointer}.timer-fields{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}.timer-fields input{width:100px}.timer-fields input,.timer-fields select{font:inherit;min-height:36px;border:1px solid var(--border);border-radius:6px;padding:4px}.session-timer p{line-height:1.5;max-width:800px}#timerSummary{max-width:500px;width:calc(100% - 32px);border:1px solid var(--border);border-radius:16px;padding:24px}#timerSummary p{line-height:1.6}#timerSummary::backdrop{background:#0006}body.heart-open>#sessionTimer{display:block!important}body.heart-open>#timerSummary[open]{display:block!important}

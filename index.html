@@ -35,6 +35,14 @@
   </header>
 
   <nav class="section-nav" aria-label="Breathe sections"><button id="breatheSection" type="button" aria-pressed="true">Breathe</button><button id="heartSection" type="button" aria-pressed="false">Heart</button></nav>
+  <details id="sessionTimer" class="session-timer"><summary id="timerLabel">Session timer</summary>
+    <div class="timer-fields"><label>Minutes <select id="timerMinutes"><option value="0">No time limit</option><option>3</option><option>5</option><option>10</option><option>15</option><option>20</option><option value="custom">Custom</option></select></label>
+    <label id="timerCustomLabel" hidden>Custom minutes <input id="timerCustom" type="number" min="0.1" max="240" step="0.1" value="5"></label>
+    <label>Breath target <input id="timerBreaths" type="number" min="1" max="10000" step="1" placeholder="No limit"></label></div>
+    <p>Set either or both; the first target reached ends the session. Pauses do not count. Choices are remembered. Guided breaths are timing cues, not measured breaths. In Heart, start the breathing guide to start the session.</p>
+    <p>Finish: gentle chime (respects Sound) and vibration where supported. Background browsers may delay the cue until you return.</p>
+  </details>
+  <dialog id="timerSummary" aria-labelledby="timerSummaryTitle"><h2 id="timerSummaryTitle">Session complete</h2><p id="timerSummaryText"></p><p id="timerSummaryHeart"></p><button id="timerSummaryDone" class="btn primary" type="button">Done</button></dialog>
   <div class="camera-preference"><button id="cameraToggle" type="button" role="switch" aria-checked="true" aria-describedby="cameraHelp">Camera ON</button><span id="cameraHelp"></span></div>
   <section id="heartSectionPanel" class="heart-panel" hidden aria-labelledby="heartTitle">
     <h1 id="heartTitle">Heart</h1><p>No face camera · fingertip PPG or Bluetooth sensor</p>
@@ -217,6 +225,6 @@
     </div>
   </div>
   <script type="module" src="app.js"></script>
-  <script defer src="breathe-wit-feedback.js" data-app-version="0.15.0"></script>
+  <script defer src="breathe-wit-feedback.js" data-app-version="0.16.0"></script>
 </body>
 </html>
